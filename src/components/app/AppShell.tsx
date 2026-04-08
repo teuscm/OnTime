@@ -65,7 +65,12 @@ export function AppShell({ children, userName, userEmail }: AppShellProps) {
         <div className={cn("h-16 flex items-center border-b border-border/50 px-3 gap-2", collapsed ? "justify-center" : "justify-between")}>
           <div className="flex items-center gap-2 min-w-0">
             <img src={onlyLogo} alt="Onfly" className="h-7 shrink-0" />
-            {!collapsed && <span className="font-semibold text-sm tracking-tight text-primary">OnTime</span>}
+            {!collapsed && (
+              <span className="font-semibold text-sm tracking-tight">
+                <span className="text-primary">OnTime</span>
+                <span className="text-muted-foreground text-xs font-normal ml-1">by Onfly</span>
+              </span>
+            )}
           </div>
           <button
             onClick={() => setCollapsed(!collapsed)}
@@ -127,7 +132,10 @@ export function AppShell({ children, userName, userEmail }: AppShellProps) {
             <div className="h-16 flex items-center justify-between px-5 border-b border-border/50">
               <div className="flex items-center gap-2">
                 <img src={onlyLogo} alt="Onfly" className="h-7" />
-                <span className="font-semibold text-sm text-primary">OnTime</span>
+                <span className="font-semibold text-sm">
+                  <span className="text-primary">OnTime</span>
+                  <span className="text-muted-foreground text-xs font-normal ml-1">by Onfly</span>
+                </span>
               </div>
               <button onClick={() => setMobileOpen(false)} className="text-muted-foreground">
                 <X className="w-5 h-5" />

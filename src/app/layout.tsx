@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OnTime — Assistente de Viagens Corporativas | Onfly",
+  title: "OnTime by Onfly — Assistente Inteligente de Viagens Corporativas",
   description:
-    "Planejamento inteligente de viagens corporativas. Leia sua agenda, detecte viagens e gere itinerarios completos automaticamente.",
+    "Sua agenda marca o compromisso, o OnTime cuida da viagem. Itinerário completo — voo, hotel e mobilidade — montado automaticamente com IA.",
 };
 
 export default function RootLayout({
