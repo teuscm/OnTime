@@ -2,35 +2,43 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import {
   Plane,
   Bus,
   MapPin,
   Hotel,
   Car,
+  Sun,
   Sparkles,
   ArrowRight,
   ArrowLeft,
   Loader2,
   Check,
+  Coffee,
+  Star,
+  Navigation,
 } from "lucide-react";
 
+const onlyLogo = "/onfly-new.svg";
+const onhappyLogo = "/onhappy_logo.webp";
+
 const STEPS = [
-  { title: "Transporte", description: "Como voce prefere viajar?" },
-  { title: "Origem & Itinerario", description: "De onde voce sai e como gosta de planejar?" },
-  { title: "Hospedagem", description: "Suas preferencias de hospedagem." },
-  { title: "Mobilidade", description: "Como voce se desloca no destino?" },
-  { title: "Bleisure", description: "Quer aproveitar viagens com lazer?" },
+  { title: "Transporte", description: "Como você prefere viajar?", icon: Plane },
+  { title: "Origem & Itinerário", description: "De onde você sai e como gosta de planejar?", icon: MapPin },
+  { title: "Hospedagem", description: "Suas preferências de hospedagem.", icon: Hotel },
+  { title: "Mobilidade", description: "Como você se desloca no destino?", icon: Car },
+  { title: "Bleisure", description: "Quer aproveitar viagens com lazer?", icon: Sun },
 ];
 
 const CARRIERS = ["LATAM", "GOL", "Azul"] as const;
 const HOTEL_TYPES = [
-  { value: "hotel", label: "Hotel tradicional" },
-  { value: "airbnb", label: "Airbnb" },
-  { value: "charlie", label: "Charlie" },
-  { value: "", label: "Indiferente" },
+  { value: "hotel", label: "Hotel tradicional", icon: Hotel },
+  { value: "airbnb", label: "Airbnb", icon: Hotel },
+  { value: "charlie", label: "Charlie", icon: Star },
+  { value: "", label: "Indiferente", icon: Check },
 ];
 
 interface Prefs {
@@ -53,41 +61,11 @@ interface Prefs {
   bleisureWithCompanion: boolean;
 }
 
-function ToggleOption({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-3 rounded-[var(--radius-md)] border p-4 text-left transition-all cursor-pointer ${
-        selected
-          ? "border-onfly/50 bg-onfly/5 text-foreground"
-          : "border-border bg-card text-muted hover:border-border-hover"
-      }`}
-    >
-      <div
-        className={`flex h-5 w-5 items-center justify-center rounded-full border ${
-          selected ? "border-onfly bg-onfly" : "border-border"
-        }`}
-      >
-        {selected && <Check className="h-3 w-3 text-white" />}
-      </div>
-      {children}
-    </button>
-  );
-}
-
 export function OnboardingWizard() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Prefs>({
     transportType: "flight",
     preferredCarrier: "",
@@ -123,19 +101,8 @@ export function OnboardingWizard() {
     );
   };
 
-  const next = () => {
-    if (currentStep < STEPS.length - 1) {
-      setCurrentStep((s) => s + 1);
-    }
-  };
-
-  const prev = () => {
-    if (currentStep > 0) {
-      setCurrentStep((s) => s - 1);
-    }
-  };
-
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const next = () => { if (currentStep < STEPS.length - 1) setCurrentStep((s) => s + 1); };
+  const prev = () => { if (currentStep > 0) setCurrentStep((s) => s - 1); };
 
   const save = async () => {
     setSaving(true);
@@ -146,9 +113,7 @@ export function OnboardingWizard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...prefs, onboardingCompleted: true }),
       });
-      if (!res.ok) {
-        throw new Error("Erro ao salvar preferencias");
-      }
+      if (!res.ok) throw new Error("Erro ao salvar preferências");
       router.push("/dashboard");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Erro desconhecido");
@@ -157,76 +122,87 @@ export function OnboardingWizard() {
   };
 
   const isLast = currentStep === STEPS.length - 1;
+  const StepIcon = STEPS[currentStep].icon;
 
   return (
-    <Card className="w-full max-w-xl">
-      {/* Progress */}
-      <div className="flex gap-1.5 px-6 pt-6">
+    <div className="w-full max-w-xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-center gap-2 mb-8">
+        <img src={onlyLogo} alt="Onfly" className="h-7" />
+        <span className="font-semibold text-sm text-primary">OnTime</span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex gap-1.5 mb-8">
         {STEPS.map((_, i) => (
-          <div
-            key={i}
-            className={`h-1 flex-1 rounded-full transition-colors ${
-              i <= currentStep ? "gradient-onfly" : "bg-border"
-            }`}
-          />
+          <div key={i} className="flex-1 h-1 rounded-full overflow-hidden bg-muted">
+            <div
+              className={cn("h-full rounded-full transition-all duration-500", i <= currentStep ? "gradient-onfly w-full" : "w-0")}
+            />
+          </div>
         ))}
       </div>
 
-      <CardHeader className="px-6 pt-4">
-        <p className="text-xs text-muted uppercase tracking-wider">
-          Passo {currentStep + 1} de {STEPS.length}
-        </p>
-        <CardTitle className="text-xl">{STEPS[currentStep].title}</CardTitle>
-        <CardDescription>{STEPS[currentStep].description}</CardDescription>
-      </CardHeader>
+      {/* Step indicator */}
+      <div className="flex items-center gap-4 mb-6">
+        <div className="w-12 h-12 rounded-2xl gradient-onfly flex items-center justify-center">
+          <StepIcon className="w-6 h-6 text-primary-foreground" />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Passo {currentStep + 1} de {STEPS.length}
+          </p>
+          <h2 className="text-xl font-bold">{STEPS[currentStep].title}</h2>
+          <p className="text-sm text-muted-foreground">{STEPS[currentStep].description}</p>
+        </div>
+      </div>
 
-      <CardContent className="px-6 pb-6 space-y-4">
-        {saveError && (
-          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
-            {saveError}
-          </div>
-        )}
+      {saveError && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive-foreground mb-4">
+          {saveError}
+        </div>
+      )}
 
+      {/* Step content */}
+      <div className="space-y-4 animate-fade-in">
         {/* Step 1: Transport */}
         {currentStep === 0 && (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <ToggleOption
-                selected={prefs.transportType === "flight"}
+            <div className="flex rounded-xl bg-muted p-1 gap-1">
+              <button
                 onClick={() => update("transportType", "flight")}
+                className={cn("flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all duration-300", prefs.transportType === "flight" ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}
               >
-                <Plane className="h-5 w-5" />
-                <span>Aereo</span>
-              </ToggleOption>
-              <ToggleOption
-                selected={prefs.transportType === "bus"}
+                <Plane className="w-4 h-4" /> Aéreo
+              </button>
+              <button
                 onClick={() => update("transportType", "bus")}
+                className={cn("flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all duration-300", prefs.transportType === "bus" ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}
               >
-                <Bus className="h-5 w-5" />
-                <span>Onibus</span>
-              </ToggleOption>
+                <Bus className="w-4 h-4" /> Ônibus
+              </button>
             </div>
 
             <div>
-              <label className="text-sm text-muted mb-2 block">
-                {prefs.transportType === "flight" ? "Cia aerea preferida" : "Viacao preferida"}
+              <label className="text-sm text-muted-foreground mb-3 block">
+                {prefs.transportType === "flight" ? "Cia aérea preferida" : "Viação preferida"}
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-wrap gap-2">
                 {CARRIERS.map((c) => (
-                  <ToggleOption
+                  <button
                     key={c}
-                    selected={prefs.preferredCarrier === c}
                     onClick={() => update("preferredCarrier", c)}
+                    className={cn("px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border", prefs.preferredCarrier === c ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-border-hover")}
                   >
-                    <span className="text-sm">{c}</span>
-                  </ToggleOption>
+                    {c}
+                  </button>
                 ))}
-                <ToggleOption
-                  selected={prefs.preferredCarrier === ""}
+                <button
                   onClick={() => update("preferredCarrier", "")}
+                  className={cn("px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border", prefs.preferredCarrier === "" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-border-hover")}
                 >
-                  <span className="text-sm">Indiferente</span>
-                </ToggleOption>
+                  Indiferente
+                </button>
               </div>
             </div>
           </>
@@ -236,94 +212,69 @@ export function OnboardingWizard() {
         {currentStep === 1 && (
           <>
             <div>
-              <label className="text-sm text-muted mb-2 block">Sua cidade base</label>
+              <label className="text-sm text-muted-foreground mb-2 block">Sua cidade base</label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={prefs.homeCity}
                   onChange={(e) => update("homeCity", e.target.value)}
                   placeholder="Ex: Belo Horizonte"
-                  className="flex-1 h-10 rounded-[var(--radius-sm)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-onfly/40"
+                  className="flex-1 h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
                 />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={detectLocation}
-                  className="shrink-0"
-                >
-                  <MapPin className="h-4 w-4" />
+                <Button variant="secondary" size="sm" onClick={detectLocation} className="shrink-0 h-10 w-10 p-0">
+                  <Navigation className="h-4 w-4" />
                 </Button>
               </div>
             </div>
 
             <div>
-              <label className="text-sm text-muted mb-2 block">Aeroporto mais proximo</label>
+              <label className="text-sm text-muted-foreground mb-2 block">Aeroporto mais próximo</label>
               <input
                 type="text"
                 value={prefs.homeAirport}
                 onChange={(e) => update("homeAirport", e.target.value.toUpperCase())}
                 placeholder="Ex: CNF"
                 maxLength={3}
-                className="w-24 h-10 rounded-[var(--radius-sm)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-onfly/40 uppercase"
+                className="w-24 h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 uppercase"
               />
             </div>
 
             <div>
-              <label className="text-sm text-muted mb-2 block">Estilo de itinerario</label>
-              <div className="grid grid-cols-2 gap-3">
-                <ToggleOption
-                  selected={prefs.itineraryStyle === "same_day"}
-                  onClick={() => update("itineraryStyle", "same_day")}
-                >
-                  <span className="text-sm">Bate-volta</span>
-                </ToggleOption>
-                <ToggleOption
-                  selected={prefs.itineraryStyle === "buffer"}
-                  onClick={() => update("itineraryStyle", "buffer")}
-                >
-                  <span className="text-sm">Com buffer</span>
-                </ToggleOption>
+              <label className="text-sm text-muted-foreground mb-3 block">Estilo de itinerário</label>
+              <div className="flex rounded-xl bg-muted p-1 gap-1">
+                <button onClick={() => update("itineraryStyle", "same_day")} className={cn("flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all duration-300", prefs.itineraryStyle === "same_day" ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>
+                  Bate-volta
+                </button>
+                <button onClick={() => update("itineraryStyle", "buffer")} className={cn("flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all duration-300", prefs.itineraryStyle === "buffer" ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>
+                  Com buffer
+                </button>
               </div>
             </div>
 
             {prefs.itineraryStyle === "buffer" && (
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={prefs.bufferArriveDayBefore}
-                    onChange={(e) => update("bufferArriveDayBefore", e.target.checked)}
-                    className="accent-onfly"
-                  />
-                  Chegar dia antes
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={prefs.bufferDepartDayAfter}
-                    onChange={(e) => update("bufferDepartDayAfter", e.target.checked)}
-                    className="accent-onfly"
-                  />
-                  Sair dia depois
-                </label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                  <span className="text-sm">Chegar dia antes</span>
+                  <Switch checked={prefs.bufferArriveDayBefore} onCheckedChange={(v) => update("bufferArriveDayBefore", v)} />
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                  <span className="text-sm">Sair dia depois</span>
+                  <Switch checked={prefs.bufferDepartDayAfter} onCheckedChange={(v) => update("bufferDepartDayAfter", v)} />
+                </div>
               </div>
             )}
 
             <div>
-              <label className="text-sm text-muted mb-2 block">Horario preferido</label>
-              <div className="grid grid-cols-3 gap-2">
+              <label className="text-sm text-muted-foreground mb-3 block">Horário preferido</label>
+              <div className="flex rounded-xl bg-muted p-1 gap-1">
                 {[
-                  { value: "morning" as const, label: "Manha cedo" },
+                  { value: "morning" as const, label: "Manhã" },
                   { value: "midday" as const, label: "Meio do dia" },
                   { value: "evening" as const, label: "Noite" },
                 ].map((opt) => (
-                  <ToggleOption
-                    key={opt.value}
-                    selected={prefs.timePreference === opt.value}
-                    onClick={() => update("timePreference", opt.value)}
-                  >
-                    <span className="text-sm">{opt.label}</span>
-                  </ToggleOption>
+                  <button key={opt.value} onClick={() => update("timePreference", opt.value)} className={cn("flex-1 py-2.5 rounded-lg text-sm font-medium transition-all duration-300", prefs.timePreference === opt.value ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>
+                    {opt.label}
+                  </button>
                 ))}
               </div>
             </div>
@@ -334,53 +285,34 @@ export function OnboardingWizard() {
         {currentStep === 2 && (
           <>
             <div className="space-y-3">
-              <label className="flex items-center justify-between">
-                <span className="text-sm">Divide quarto?</span>
-                <button
-                  type="button"
-                  onClick={() => update("hotelShareRoom", !prefs.hotelShareRoom)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                    prefs.hotelShareRoom ? "bg-onfly" : "bg-border"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                      prefs.hotelShareRoom ? "translate-x-6" : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              </label>
-
-              <label className="flex items-center justify-between">
-                <span className="text-sm">Cafe da manha obrigatorio?</span>
-                <button
-                  type="button"
-                  onClick={() => update("hotelBreakfastRequired", !prefs.hotelBreakfastRequired)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                    prefs.hotelBreakfastRequired ? "bg-onfly" : "bg-border"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                      prefs.hotelBreakfastRequired ? "translate-x-6" : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              </label>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Hotel className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium">Divide quarto?</span>
+                </div>
+                <Switch checked={prefs.hotelShareRoom} onCheckedChange={(v) => update("hotelShareRoom", v)} />
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Coffee className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium">Café da manhã obrigatório?</span>
+                </div>
+                <Switch checked={prefs.hotelBreakfastRequired} onCheckedChange={(v) => update("hotelBreakfastRequired", v)} />
+              </div>
             </div>
 
             <div>
-              <label className="text-sm text-muted mb-2 block">Tipo de hospedagem</label>
+              <label className="text-sm text-muted-foreground mb-3 block">Tipo de hospedagem</label>
               <div className="grid grid-cols-2 gap-2">
                 {HOTEL_TYPES.map((opt) => (
-                  <ToggleOption
+                  <button
                     key={opt.value}
-                    selected={prefs.hotelType === opt.value}
                     onClick={() => update("hotelType", opt.value)}
+                    className={cn("flex items-center gap-3 p-3 rounded-xl border text-left transition-all duration-200", prefs.hotelType === opt.value ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground hover:border-border-hover")}
                   >
-                    <Hotel className="h-4 w-4" />
-                    <span className="text-sm">{opt.label}</span>
-                  </ToggleOption>
+                    <opt.icon className="w-4 h-4" />
+                    <span className="text-sm font-medium">{opt.label}</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -390,41 +322,24 @@ export function OnboardingWizard() {
         {/* Step 4: Mobility */}
         {currentStep === 3 && (
           <>
-            <label className="flex items-center justify-between">
-              <span className="text-sm">Dirige e prefere alugar carro?</span>
-              <button
-                type="button"
-                onClick={() => update("prefersRentalCar", !prefs.prefersRentalCar)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                  prefs.prefersRentalCar ? "bg-onfly" : "bg-border"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                    prefs.prefersRentalCar ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </label>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+              <div className="flex items-center gap-3">
+                <Car className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium">Dirige e prefere alugar carro?</span>
+              </div>
+              <Switch checked={prefs.prefersRentalCar} onCheckedChange={(v) => update("prefersRentalCar", v)} />
+            </div>
 
             {!prefs.prefersRentalCar && (
               <div>
-                <label className="text-sm text-muted mb-2 block">Preferencia de transporte</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <ToggleOption
-                    selected={prefs.mobilityPreference === "rideshare"}
-                    onClick={() => update("mobilityPreference", "rideshare")}
-                  >
-                    <Car className="h-5 w-5" />
-                    <span className="text-sm">App (Uber/99)</span>
-                  </ToggleOption>
-                  <ToggleOption
-                    selected={prefs.mobilityPreference === "taxi"}
-                    onClick={() => update("mobilityPreference", "taxi")}
-                  >
-                    <Car className="h-5 w-5" />
-                    <span className="text-sm">Taxi</span>
-                  </ToggleOption>
+                <label className="text-sm text-muted-foreground mb-3 block">Preferência de transporte</label>
+                <div className="flex rounded-xl bg-muted p-1 gap-1">
+                  <button onClick={() => update("mobilityPreference", "rideshare")} className={cn("flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all duration-300", prefs.mobilityPreference === "rideshare" ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>
+                    <Car className="w-4 h-4" /> App (Uber/99)
+                  </button>
+                  <button onClick={() => update("mobilityPreference", "taxi")} className={cn("flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all duration-300", prefs.mobilityPreference === "taxi" ? "gradient-onfly text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground")}>
+                    <Car className="w-4 h-4" /> Táxi
+                  </button>
                 </div>
               </div>
             )}
@@ -434,87 +349,67 @@ export function OnboardingWizard() {
         {/* Step 5: Bleisure */}
         {currentStep === 4 && (
           <>
-            <div className="rounded-lg gradient-onhappy-soft border border-onhappy/20 p-4 mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="h-5 w-5 text-onhappy" />
-                <span className="font-medium">OnHappy</span>
+            <div className="rounded-xl gradient-onhappy-soft border border-onhappy/20 p-5 mb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <img src={onhappyLogo} alt="OnHappy" className="h-8 rounded" />
+                <div>
+                  <span className="font-semibold text-sm">OnHappy</span>
+                  <p className="text-xs text-muted-foreground">Estenda viagens de trabalho com lazer</p>
+                </div>
               </div>
-              <p className="text-sm text-muted">
-                Receba sugestoes para estender viagens de trabalho com lazer no fim de semana.
+              <p className="text-sm text-muted-foreground">
+                Receba sugestões para estender viagens de trabalho com lazer no fim de semana.
+                Hospedagem extra com até 60% off.
               </p>
             </div>
 
-            <label className="flex items-center justify-between">
-              <span className="text-sm">Ativar sugestoes bleisure?</span>
-              <button
-                type="button"
-                onClick={() => update("bleisureEnabled", !prefs.bleisureEnabled)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                  prefs.bleisureEnabled ? "bg-onhappy" : "bg-border"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                    prefs.bleisureEnabled ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </label>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-4 h-4 text-onhappy" />
+                <span className="text-sm font-medium">Ativar sugestões bleisure?</span>
+              </div>
+              <Switch checked={prefs.bleisureEnabled} onCheckedChange={(v) => update("bleisureEnabled", v)} className="data-[state=checked]:bg-onhappy" />
+            </div>
 
             {prefs.bleisureEnabled && (
-              <label className="flex items-center justify-between">
-                <span className="text-sm">Viaja com acompanhante?</span>
-                <button
-                  type="button"
-                  onClick={() => update("bleisureWithCompanion", !prefs.bleisureWithCompanion)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                    prefs.bleisureWithCompanion ? "bg-onhappy" : "bg-border"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                      prefs.bleisureWithCompanion ? "translate-x-6" : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              </label>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Sun className="w-4 h-4 text-onhappy" />
+                  <span className="text-sm font-medium">Viaja com acompanhante?</span>
+                </div>
+                <Switch checked={prefs.bleisureWithCompanion} onCheckedChange={(v) => update("bleisureWithCompanion", v)} className="data-[state=checked]:bg-onhappy" />
+              </div>
             )}
           </>
         )}
+      </div>
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between pt-4">
-          <Button
-            variant="ghost"
-            onClick={prev}
-            disabled={currentStep === 0}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
+      {/* Navigation */}
+      <div className="flex items-center justify-between pt-8">
+        <Button
+          variant="ghost"
+          onClick={prev}
+          disabled={currentStep === 0}
+          className="text-muted-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Voltar
+        </Button>
+
+        {isLast ? (
+          <Button onClick={save} disabled={saving} className="gradient-onfly text-primary-foreground border-0 px-8 hover:-translate-y-0.5 transition-all">
+            {saving ? (
+              <><Loader2 className="h-4 w-4 animate-spin" />Salvando...</>
+            ) : (
+              <>Começar<ArrowRight className="h-4 w-4 ml-1" /></>
+            )}
           </Button>
-
-          {isLast ? (
-            <Button onClick={save} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  Comecar
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button onClick={next}>
-              Proximo
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+        ) : (
+          <Button onClick={next} className="gradient-onfly text-primary-foreground border-0 px-8 hover:-translate-y-0.5 transition-all">
+            Próximo<ArrowRight className="h-4 w-4 ml-1" />
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
