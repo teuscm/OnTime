@@ -3,7 +3,8 @@ import path from "path";
 import fs from "fs";
 import type { UserPreferences } from "@/types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const isVercel = !!process.env.VERCEL;
+const DATA_DIR = isVercel ? "/tmp" : path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "ontime.db");
 
 let db: Database.Database | null = null;

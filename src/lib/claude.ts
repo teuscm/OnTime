@@ -189,13 +189,17 @@ export async function filterTravelEvents(
     system: `You are a calendar event analyzer. Given a list of calendar events and a user's home city, identify which events require travel (the event location is in a different city from the user's home).
 
 Rules:
-- Only include events with a physical location in a DIFFERENT city from the home city
-- Ignore virtual/online meetings (Zoom, Meet, Teams links)
-- Ignore events without a location
-- Ignore recurring daily events (standups, dailies) unless they have a physical location in another city
+- ONLY include events whose location is a physical address or city DIFFERENT from the user's home city, requiring intercity travel (plane, bus, or long drive)
+- IGNORE meeting rooms, conference rooms, office rooms (e.g. "Sala 1", "Sala Azul", "Room A", "Auditório", "Sala de Reunião", "Escritório", floor numbers, building names within the same city)
+- IGNORE virtual/online meetings (Zoom, Meet, Teams, Google Meet links, any URL)
+- IGNORE events without a location
+- IGNORE recurring daily events (standups, dailies, 1:1s) unless they explicitly mention a different city
+- IGNORE events at the company's own office or headquarters (same city as home)
+- A location like "Av. Paulista, São Paulo" is only travel-worthy if the user lives in a DIFFERENT city
+- When in doubt, do NOT include — false negatives are better than false positives
 - Return ONLY the array of event IDs that require travel
 
-Respond with a JSON array of event ID strings. No markdown. No explanation.`,
+Respond with a JSON array of event ID strings. No markdown. No explanation. Empty array [] if no travel is needed.`,
     messages: [
       {
         role: "user",
