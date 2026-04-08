@@ -7,7 +7,7 @@ export default async function Home() {
   const session = await getSession();
 
   if (session) {
-    const prefs = getPreferences(session.onflyUserId);
+    const prefs = await getPreferences(session.onflyUserId);
     const hasOnboarding = prefs && (prefs.onboarding_completed as number) === 1;
     redirect(hasOnboarding ? "/dashboard" : "/onboarding");
   }

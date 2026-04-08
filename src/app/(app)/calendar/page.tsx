@@ -7,7 +7,7 @@ export default async function CalendarPage() {
   const session = await getSession();
   if (!session) redirect("/");
 
-  const googleConnection = getCalendarConnection(session.onflyUserId, "google");
+  const googleConnection = await getCalendarConnection(session.onflyUserId, "google");
 
   return (
     <div className="p-6 lg:p-10 max-w-[960px] mx-auto">

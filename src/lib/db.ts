@@ -1,80 +1,84 @@
-import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
+import { createClient, type Client } from "@libsql/client";
 import type { UserPreferences } from "@/types";
 
-const isVercel = !!process.env.VERCEL;
-const DATA_DIR = isVercel ? "/tmp" : path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "ontime.db");
+let client: Client | null = null;
 
-let db: Database.Database | null = null;
-
-export function getDb(): Database.Database {
-  if (!db) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
-    migrate(db);
+function getClient(): Client {
+  if (!client) {
+    client = createClient({
+      url: process.env.TURSO_DATABASE_URL!,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
   }
-  return db;
+  return client;
 }
 
-function migrate(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS user_preferences (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      onfly_user_id TEXT UNIQUE NOT NULL,
+let migrated = false;
 
-      transport_type TEXT DEFAULT 'flight',
-      preferred_carrier TEXT DEFAULT '',
+async function migrate(): Promise<void> {
+  if (migrated) return;
+  const db = getClient();
+  await db.batch([
+    {
+      sql: `CREATE TABLE IF NOT EXISTS user_preferences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        onfly_user_id TEXT UNIQUE NOT NULL,
+        transport_type TEXT DEFAULT 'flight',
+        preferred_carrier TEXT DEFAULT '',
+        home_city TEXT DEFAULT '',
+        home_airport TEXT DEFAULT '',
+        home_lat REAL,
+        home_lng REAL,
+        itinerary_style TEXT DEFAULT 'buffer',
+        buffer_arrive_day_before INTEGER DEFAULT 0,
+        buffer_depart_day_after INTEGER DEFAULT 0,
+        time_preference TEXT DEFAULT 'morning',
+        hotel_share_room INTEGER DEFAULT 0,
+        hotel_breakfast_required INTEGER DEFAULT 1,
+        hotel_type TEXT DEFAULT '',
+        prefers_rental_car INTEGER DEFAULT 0,
+        mobility_preference TEXT DEFAULT 'rideshare',
+        bleisure_enabled INTEGER DEFAULT 0,
+        bleisure_with_companion INTEGER DEFAULT 0,
+        onboarding_completed INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      args: [],
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS calendar_connections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        onfly_user_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_expiry TEXT,
+        calendar_id TEXT DEFAULT 'primary',
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(onfly_user_id, provider)
+      )`,
+      args: [],
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS itineraries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        onfly_user_id TEXT NOT NULL,
+        event_id TEXT,
+        status TEXT DEFAULT 'suggested',
+        itinerary_json TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      args: [],
+    },
+  ]);
+  migrated = true;
+}
 
-      home_city TEXT DEFAULT '',
-      home_airport TEXT DEFAULT '',
-      home_lat REAL,
-      home_lng REAL,
-      itinerary_style TEXT DEFAULT 'buffer',
-      buffer_arrive_day_before INTEGER DEFAULT 0,
-      buffer_depart_day_after INTEGER DEFAULT 0,
-      time_preference TEXT DEFAULT 'morning',
-
-      hotel_share_room INTEGER DEFAULT 0,
-      hotel_breakfast_required INTEGER DEFAULT 1,
-      hotel_type TEXT DEFAULT '',
-
-      prefers_rental_car INTEGER DEFAULT 0,
-      mobility_preference TEXT DEFAULT 'rideshare',
-
-      bleisure_enabled INTEGER DEFAULT 0,
-      bleisure_with_companion INTEGER DEFAULT 0,
-
-      onboarding_completed INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS calendar_connections (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      onfly_user_id TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      access_token TEXT,
-      refresh_token TEXT,
-      token_expiry TEXT,
-      calendar_id TEXT DEFAULT 'primary',
-      created_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(onfly_user_id, provider)
-    );
-
-    CREATE TABLE IF NOT EXISTS itineraries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      onfly_user_id TEXT NOT NULL,
-      event_id TEXT,
-      status TEXT DEFAULT 'suggested',
-      itinerary_json TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
+async function getDb(): Promise<Client> {
+  await migrate();
+  return getClient();
 }
 
 // ─── Allowed columns (SQL injection guard) ──────────────────
@@ -100,7 +104,7 @@ const PREFERENCE_COLUMNS = new Set([
   "onboarding_completed",
 ]);
 
-// ─── DB Row → TypeScript (shared) ───────────────────────────
+// ─── DB Row → TypeScript ────────────────────────────────────
 
 export function dbRowToPreferences(row: Record<string, unknown>): UserPreferences {
   return {
@@ -126,17 +130,20 @@ export function dbRowToPreferences(row: Record<string, unknown>): UserPreference
   };
 }
 
-// ─── Preference Helpers ──────────────────────────────────────
+// ─── Preference Helpers ─────────────────────────────────────
 
-export function getPreferences(onflyUserId: string) {
-  const db = getDb();
-  return db.prepare("SELECT * FROM user_preferences WHERE onfly_user_id = ?").get(onflyUserId) as Record<string, unknown> | undefined;
+export async function getPreferences(onflyUserId: string) {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM user_preferences WHERE onfly_user_id = ?",
+    args: [onflyUserId],
+  });
+  return result.rows[0] as Record<string, unknown> | undefined;
 }
 
-export function upsertPreferences(onflyUserId: string, prefs: Record<string, unknown>) {
-  const db = getDb();
+export async function upsertPreferences(onflyUserId: string, prefs: Record<string, unknown>) {
+  const db = await getDb();
 
-  // Filter to allowed columns only (SQL injection guard)
   const safePrefs: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(prefs)) {
     if (PREFERENCE_COLUMNS.has(key)) {
@@ -144,78 +151,80 @@ export function upsertPreferences(onflyUserId: string, prefs: Record<string, unk
     }
   }
 
-  const existing = getPreferences(onflyUserId);
+  const existing = await getPreferences(onflyUserId);
 
   if (existing) {
-    const fields = Object.keys(safePrefs)
-      .map((k) => `${k} = @${k}`)
-      .join(", ");
-    if (!fields) return;
-    db.prepare(
-      `UPDATE user_preferences SET ${fields}, updated_at = datetime('now') WHERE onfly_user_id = @onfly_user_id`
-    ).run({ ...safePrefs, onfly_user_id: onflyUserId });
+    const keys = Object.keys(safePrefs);
+    if (keys.length === 0) return;
+    const setClause = keys.map((k) => `${k} = ?`).join(", ");
+    const values = keys.map((k) => safePrefs[k] as string | number | null);
+    await db.execute({
+      sql: `UPDATE user_preferences SET ${setClause}, updated_at = datetime('now') WHERE onfly_user_id = ?`,
+      args: [...values, onflyUserId],
+    });
   } else {
-    const allFields = { onfly_user_id: onflyUserId, ...safePrefs };
+    const allFields: Record<string, unknown> = { onfly_user_id: onflyUserId, ...safePrefs };
     const keys = Object.keys(allFields);
-    const placeholders = keys.map((k) => `@${k}`).join(", ");
-    db.prepare(
-      `INSERT INTO user_preferences (${keys.join(", ")}) VALUES (${placeholders})`
-    ).run(allFields);
+    const placeholders = keys.map(() => "?").join(", ");
+    const values = keys.map((k) => allFields[k] as string | number | null);
+    await db.execute({
+      sql: `INSERT INTO user_preferences (${keys.join(", ")}) VALUES (${placeholders})`,
+      args: values,
+    });
   }
 }
 
-// ─── Calendar Connection Helpers ─────────────────────────────
+// ─── Calendar Connection Helpers ────────────────────────────
 
-export function getCalendarConnection(onflyUserId: string, provider: string) {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM calendar_connections WHERE onfly_user_id = ? AND provider = ?")
-    .get(onflyUserId, provider) as Record<string, unknown> | undefined;
+export async function getCalendarConnection(onflyUserId: string, provider: string) {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM calendar_connections WHERE onfly_user_id = ? AND provider = ?",
+    args: [onflyUserId, provider],
+  });
+  return result.rows[0] as Record<string, unknown> | undefined;
 }
 
-export function upsertCalendarConnection(
+export async function upsertCalendarConnection(
   onflyUserId: string,
   provider: string,
   tokens: { accessToken: string; refreshToken: string; tokenExpiry: string }
 ) {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO calendar_connections (onfly_user_id, provider, access_token, refresh_token, token_expiry)
-     VALUES (@uid, @provider, @access, @refresh, @expiry)
+  const db = await getDb();
+  await db.execute({
+    sql: `INSERT INTO calendar_connections (onfly_user_id, provider, access_token, refresh_token, token_expiry)
+     VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(onfly_user_id, provider) DO UPDATE SET
-       access_token = @access,
-       refresh_token = @refresh,
-       token_expiry = @expiry`
-  ).run({
-    uid: onflyUserId,
-    provider,
-    access: tokens.accessToken,
-    refresh: tokens.refreshToken,
-    expiry: tokens.tokenExpiry,
+       access_token = excluded.access_token,
+       refresh_token = excluded.refresh_token,
+       token_expiry = excluded.token_expiry`,
+    args: [onflyUserId, provider, tokens.accessToken, tokens.refreshToken, tokens.tokenExpiry],
   });
 }
 
-// ─── Itinerary Helpers ───────────────────────────────────────
+// ─── Itinerary Helpers ──────────────────────────────────────
 
-export function saveItinerary(onflyUserId: string, eventId: string, itineraryJson: string) {
-  const db = getDb();
-  return db
-    .prepare(
-      `INSERT INTO itineraries (onfly_user_id, event_id, itinerary_json) VALUES (?, ?, ?)`
-    )
-    .run(onflyUserId, eventId, itineraryJson);
+export async function saveItinerary(onflyUserId: string, eventId: string, itineraryJson: string) {
+  const db = await getDb();
+  await db.execute({
+    sql: `INSERT INTO itineraries (onfly_user_id, event_id, itinerary_json) VALUES (?, ?, ?)`,
+    args: [onflyUserId, eventId, itineraryJson],
+  });
 }
 
-export function getItineraries(onflyUserId: string, limit = 50) {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM itineraries WHERE onfly_user_id = ? ORDER BY created_at DESC LIMIT ?")
-    .all(onflyUserId, limit) as Record<string, unknown>[];
+export async function getItineraries(onflyUserId: string, limit = 50) {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: "SELECT * FROM itineraries WHERE onfly_user_id = ? ORDER BY created_at DESC LIMIT ?",
+    args: [onflyUserId, limit],
+  });
+  return result.rows as Record<string, unknown>[];
 }
 
-export function updateItineraryStatus(id: number, status: string) {
-  const db = getDb();
-  db.prepare(
-    `UPDATE itineraries SET status = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(status, id);
+export async function updateItineraryStatus(id: number, status: string) {
+  const db = await getDb();
+  await db.execute({
+    sql: `UPDATE itineraries SET status = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [status, id],
+  });
 }

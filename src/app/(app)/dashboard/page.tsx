@@ -7,7 +7,7 @@ export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect("/");
 
-  const googleConnection = getCalendarConnection(session.onflyUserId, "google");
+  const googleConnection = await getCalendarConnection(session.onflyUserId, "google");
   const hasGoogleCalendar = !!googleConnection;
 
   return (

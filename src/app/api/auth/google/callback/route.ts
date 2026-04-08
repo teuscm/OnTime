@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 
     const expiryDate = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    upsertCalendarConnection(session.onflyUserId, "google", {
+    await upsertCalendarConnection(session.onflyUserId, "google", {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       tokenExpiry: expiryDate,

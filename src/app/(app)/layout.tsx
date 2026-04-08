@@ -11,7 +11,7 @@ export default async function AppLayout({
   const session = await getSession();
   if (!session) redirect("/");
 
-  const prefs = getPreferences(session.onflyUserId);
+  const prefs = await getPreferences(session.onflyUserId);
   if (!prefs || (prefs.onboarding_completed as number) !== 1) {
     redirect("/onboarding");
   }

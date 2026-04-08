@@ -7,7 +7,7 @@ import { upsertCalendarConnection } from "@/lib/db";
 export async function GET() {
   try {
     const session = await requireSession();
-    const connection = getCalendarConnection(session.onflyUserId, "google");
+    const connection = await getCalendarConnection(session.onflyUserId, "google");
 
     if (!connection) {
       return NextResponse.json({ error: "No Google Calendar connected" }, { status: 400 });
@@ -22,7 +22,7 @@ export async function GET() {
       accessToken = refreshed.access_token;
       const newExpiry = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
 
-      upsertCalendarConnection(session.onflyUserId, "google", {
+      await upsertCalendarConnection(session.onflyUserId, "google", {
         accessToken: refreshed.access_token,
         refreshToken: connection.refresh_token as string,
         tokenExpiry: newExpiry,

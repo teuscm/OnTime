@@ -5,7 +5,7 @@ import { getPreferences, upsertPreferences } from "@/lib/db";
 export async function GET() {
   try {
     const session = await requireSession();
-    const prefs = getPreferences(session.onflyUserId);
+    const prefs = await getPreferences(session.onflyUserId);
 
     if (!prefs) {
       return NextResponse.json({ data: null });
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    upsertPreferences(session.onflyUserId, dbFields);
+    await upsertPreferences(session.onflyUserId, dbFields);
 
     return NextResponse.json({ data: { success: true } });
   } catch (error) {

@@ -7,7 +7,7 @@ import type { CalendarEvent } from "@/types";
 export async function POST(request: NextRequest) {
   try {
     const session = await requireSession();
-    const prefsRow = getPreferences(session.onflyUserId);
+    const prefsRow = await getPreferences(session.onflyUserId);
 
     if (!prefsRow) {
       return NextResponse.json({ error: "Complete onboarding first" }, { status: 400 });

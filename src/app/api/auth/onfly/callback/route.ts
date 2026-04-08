@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     await setSessionCookie(sessionToken);
 
     // Check if user has completed onboarding
-    const prefs = getPreferences(String(user.id));
+    const prefs = await getPreferences(String(user.id));
     const hasCompletedOnboarding = prefs && (prefs.onboarding_completed as number) === 1;
 
     const redirectUrl = hasCompletedOnboarding ? "/dashboard" : "/onboarding";

@@ -7,7 +7,7 @@ import type { CalendarEvent } from "@/types";
 export async function POST(request: NextRequest) {
   try {
     const session = await requireSession();
-    const prefsRow = getPreferences(session.onflyUserId);
+    const prefsRow = await getPreferences(session.onflyUserId);
 
     if (!prefsRow) {
       return NextResponse.json({ error: "Complete onboarding first" }, { status: 400 });
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       const matchingEvent = travelEvents.find(
         (e) => e.title === trip.event.title
       );
-      saveItinerary(
+      await saveItinerary(
         session.onflyUserId,
         matchingEvent?.id ?? "",
         JSON.stringify(trip)
