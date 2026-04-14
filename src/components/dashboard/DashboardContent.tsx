@@ -308,6 +308,102 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
 
     // Build itinerary deterministically
     const needsHotel = chosenScenario.label !== "Bate-volta";
+    const toISO = (dt: string) => dt?.includes("T") ? dt.split(".")[0] : dt?.replace(" ", "T") ?? "";
+    const eventLocation = searchedEvent.location?.split(",")[0] ?? "";
+
+    // Generate mobility legs from real flight/hotel times
+    const mobilityLegs: Array<{ leg: string; type: "uber" | "taxi" | "rental_car"; time: string }> = [];
+    if (recOut) {
+      const outDepTime = toISO(recOut.departure).slice(11, 16);
+      const outDepHour = parseInt(outDepTime.split(":")[0]);
+      const casaTime = `${String(Math.max(0, outDepHour - 2)).padStart(2, "0")}:${outDepTime.split(":")[1]}`;
+      mobilityLegs.push({ leg: `Casa → Aeroporto ${recOut.from}`, type: "uber", time: casaTime });
+
+      const outArrTime = toISO(recOut.arrival).slice(11, 16);
+      const outArrHour = parseInt(outArrTime.split(":")[0]);
+      const toDestTime = `${String(Math.min(23, outArrHour)).padStart(2, "0")}:${String(parseInt(outArrTime.split(":")[1]) + 30).padStart(2, "0").slice(0, 2)}`;
+
+      if (needsHotel && recHotel) {
+        mobilityLegs.push({ leg: `Aeroporto ${recOut.to} → ${recHotel.name}`, type: "uber", time: toDestTime });
+      } else {
+        mobilityLegs.push({ leg: `Aeroporto ${recOut.to} → ${eventLocation}`, type: "uber", time: toDestTime });
+      }
+    }
+
+    if (needsHotel && recHotel) {
+      const eventStartTime = searchedEvent.start.slice(11, 16) || "09:00";
+      const eventStartHour = parseInt(eventStartTime.split(":")[0]);
+      mobilityLegs.push({ leg: `${recHotel.name} → ${eventLocation}`, type: "uber", time: `${String(Math.max(0, eventStartHour - 1)).padStart(2, "0")}:00` });
+
+      const eventEndTime = searchedEvent.end.slice(11, 16) || "18:00";
+      mobilityLegs.push({ leg: `${eventLocation} → ${recHotel.name}`, type: "uber", time: eventEndTime });
+    }
+
+    if (recRet) {
+      const retDepTime = toISO(recRet.departure).slice(11, 16);
+      const retDepHour = parseInt(retDepTime.split(":")[0]);
+
+      if (needsHotel && recHotel) {
+        mobilityLegs.push({ leg: `${recHotel.name} → Aeroporto ${recRet.from}`, type: "uber", time: `${String(Math.max(0, retDepHour - 2)).padStart(2, "0")}:${retDepTime.split(":")[1]}` });
+      } else {
+        mobilityLegs.push({ leg: `${eventLocation} → Aeroporto ${recRet.from}`, type: "uber", time: `${String(Math.max(0, retDepHour - 1)).padStart(2, "0")}:30` });
+      }
+
+      const retArrTime = toISO(recRet.arrival).slice(11, 16);
+      const retArrHour = parseInt(retArrTime.split(":")[0]);
+      mobilityLegs.push({ leg: `Aeroporto ${recRet.to} → Casa`, type: "uber", time: `${String(Math.min(23, retArrHour)).padStart(2, "0")}:${String(parseInt(retArrTime.split(":")[1]) + 30).padStart(2, "0").slice(0, 2)}` });
+    }
+
+    // Detect conflicts with other calendar events
+    const conflicts: Array<{ event: string; originalTime: string; conflictReason: string; suggestion: string; alternativeTime: string | null }> = [];
+    if (recOut) {
+      const outStart = new Date(toISO(recOut.departure)).getTime();
+      const outEnd = new Date(toISO(recOut.arrival)).getTime();
+      // Include 2h buffer before flight (airport commute)
+      const travelStart = outStart - 2 * 60 * 60 * 1000;
+
+      for (const evt of events) {
+        if (evt.id === searchedEvent.id) continue;
+        const evtStart = new Date(evt.start).getTime();
+        const evtEnd = new Date(evt.end).getTime();
+        // Check overlap with outbound travel window
+        if (evtStart < outEnd && evtEnd > travelStart) {
+          const time = `${new Date(evt.start).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}-${new Date(evt.end).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+          conflicts.push({
+            event: evt.title,
+            originalTime: time,
+            conflictReason: "Conflita com deslocamento/voo de ida",
+            suggestion: "Participar remoto ou reagendar",
+            alternativeTime: null,
+          });
+        }
+      }
+    }
+    if (recRet) {
+      const retStart = new Date(toISO(recRet.departure)).getTime();
+      const retEnd = new Date(toISO(recRet.arrival)).getTime();
+      const travelStart = retStart - 2 * 60 * 60 * 1000;
+
+      for (const evt of events) {
+        if (evt.id === searchedEvent.id) continue;
+        const evtStart = new Date(evt.start).getTime();
+        const evtEnd = new Date(evt.end).getTime();
+        if (evtStart < retEnd && evtEnd > travelStart) {
+          const time = `${new Date(evt.start).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}-${new Date(evt.end).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+          // Avoid duplicates
+          if (!conflicts.some((c) => c.event === evt.title)) {
+            conflicts.push({
+              event: evt.title,
+              originalTime: time,
+              conflictReason: "Conflita com deslocamento/voo de volta",
+              suggestion: "Participar remoto ou reagendar",
+              alternativeTime: null,
+            });
+          }
+        }
+      }
+    }
+
     const tripItinerary: TripItinerary = {
       event: {
         title: searchedEvent.title,
@@ -322,8 +418,8 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
       } : null,
       hotel: needsHotel && recHotel ? { needed: true, checkIn: chosenScenario.dep, checkOut: chosenScenario.ret, preferences: recHotel.breakfast ? "Café da manhã incluído" : "" } : { needed: false },
       recommendationReason: parts.join(" | "),
-      mobility: [],
-      conflicts: [],
+      mobility: mobilityLegs,
+      conflicts,
       bleisure: null,
       calendarEventsToCreate: [],
     };
@@ -516,11 +612,11 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
       )}
 
       {/* Stats grid (visible after scan) */}
-      {(step === "select" || step === "searching" || step === "compare" || step === "itinerary") && (
+      {(step === "select") && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
           {[
             { label: "Eventos detectados", value: String(travelEvents.length), icon: CalendarSearch, accent: true },
-            { label: "Itinerários planejados", value: step === "itinerary" ? String(itinerary?.trips.length ?? 0) : "—", icon: Plane, accent: true },
+            { label: "Itinerários planejados", value: "—", icon: Plane, accent: true },
             { label: "Eventos totais", value: String(events.length), icon: Calendar, accent: false },
             { label: "Selecionados", value: String(selectedEventIds.size), icon: Zap, accent: true },
           ].map((stat, i) => (
@@ -538,7 +634,7 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
       )}
 
       {/* Calendar sync bar (visible when connected) */}
-      {hasGoogleCalendar && step !== "connect" && (
+      {hasGoogleCalendar && (step === "scan" || step === "select") && (
         <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border/50 mb-8">
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -1155,12 +1251,6 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
             })}
           </div>
 
-          {/* Footer hint */}
-          <div className="mt-8 p-6 rounded-2xl border border-dashed border-border text-center">
-            <RefreshCw className="w-6 h-6 text-primary mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground mb-1">Novos eventos aparecem após a sincronização</p>
-            <p className="text-xs text-muted-foreground">Sincronize sua agenda para detectar compromissos que precisam de viagem</p>
-          </div>
         </div>
       )}
     </div>
