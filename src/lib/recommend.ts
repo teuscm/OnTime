@@ -33,9 +33,11 @@ function scoreFlight(flight: FlightResult, prefs: FlightPrefs): number {
 
   const firstOutbound = flight.options.outbounds?.[0];
   if (firstOutbound && prefs.timePreference) {
+    const hour = new Date(firstOutbound.departure).getHours();
+    // Penalize red-eye flights (before 6am) heavily for corporate travel
+    if (hour < 6) score += 5000;
     const window = TIME_WINDOWS[prefs.timePreference];
     if (window) {
-      const hour = new Date(firstOutbound.departure).getHours();
       if (hour >= window.min && hour <= window.max) score -= 3000;
     }
   }

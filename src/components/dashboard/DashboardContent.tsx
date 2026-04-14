@@ -370,10 +370,87 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
   const bookCalendarEvents = async (trip: TripItinerary, tripIndex: number) => {
     setError(null);
     try {
+      const enriched = enrichedTrips?.[tripIndex];
+      const events: Array<{ title: string; start: string; end: string; description?: string; location?: string }> = [];
+      const desc = "Criado pelo OnTime | Onfly";
+      // Onfly returns "2026-04-22 08:05:00" — Google needs "2026-04-22T08:05:00"
+      const toISO = (dt: string) => {
+        if (!dt) return "";
+        return dt.includes("T") ? dt.split(".")[0] : dt.replace(" ", "T");
+      };
+      // Add minutes to datetime string, return clean ISO without Z or ms
+      const addMin = (iso: string, min: number) => {
+        const clean = toISO(iso);
+        const d = new Date(clean);
+        d.setMinutes(d.getMinutes() + min);
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+      };
+
+      const recOut = enriched?.flightOutbound?.options.find((f) => f.recommended);
+      const recRet = enriched?.flightReturn?.options.find((f) => f.recommended);
+      const recHotel = enriched?.hotelResults?.recommended?.find((h) => h.recommended) ?? enriched?.hotelResults?.recommended?.[0];
+      const eventLocation = trip.event.location ?? "";
+
+      if (recOut) {
+        const outDep = toISO(recOut.departure);
+
+        // 1. Casa → Aeroporto origem (2h antes do voo)
+        const casaToAirport = addMin(outDep, -120);
+        events.push({ title: `🚗 Casa → Aeroporto ${recOut.from}`, start: casaToAirport, end: addMin(casaToAirport, 60), description: `uber | ${desc}` });
+
+        // 2. Voo de ida
+        events.push({ title: `✈️ ${recOut.airline.code} ${recOut.flightNumber} ${recOut.from}→${recOut.to}`, start: outDep, end: toISO(recOut.arrival), description: `${recOut.airline.name} | R$ ${recOut.totalPrice.toFixed(2)} | ${desc}` });
+
+        const outArr = toISO(recOut.arrival);
+
+        if (recHotel && trip.hotel?.needed) {
+          // 3. Aeroporto destino → Hotel
+          events.push({ title: `🚗 Aeroporto ${recOut.to} → ${recHotel.name}`, start: addMin(outArr, 30), end: addMin(outArr, 90), description: `uber | ${desc}`, location: recHotel.neighborhood });
+
+          // 4. Hotel check-in/out
+          events.push({ title: `🏨 ${recHotel.name}`, start: `${trip.hotel.checkIn}T15:00:00`, end: `${trip.hotel.checkOut}T11:00:00`, description: `${recHotel.stars}★ | R$ ${recHotel.pricePerNight.toFixed(2)}/noite | ${recHotel.breakfast ? "Café incluso" : ""} | ${desc}`, location: recHotel.neighborhood });
+
+          // 5. Hotel → Evento (no dia do evento, 1h antes)
+          const eventStart = trip.event.datetime.includes("T") ? trip.event.datetime : `${trip.event.datetime}`;
+          events.push({ title: `🚗 ${recHotel.name} → ${eventLocation.split(",")[0]}`, start: addMin(eventStart, -60), end: eventStart, description: `uber | ${desc}` });
+
+          // 6. Evento → Hotel (após evento)
+          const eventEnd = addMin(eventStart, (trip.event.durationHours ?? 2) * 60);
+          events.push({ title: `🚗 ${eventLocation.split(",")[0]} → ${recHotel.name}`, start: eventEnd, end: addMin(eventEnd, 30), description: `uber | ${desc}` });
+        } else {
+          // Bate-volta: aeroporto → evento
+          events.push({ title: `🚗 Aeroporto ${recOut.to} → ${eventLocation.split(",")[0]}`, start: addMin(outArr, 30), end: addMin(outArr, 60), description: `uber | ${desc}` });
+        }
+      }
+
+      if (recRet) {
+        const retDep = toISO(recRet.departure);
+
+        if (recHotel && trip.hotel?.needed) {
+          // 7. Hotel → Aeroporto volta (2h antes do voo de volta)
+          events.push({ title: `🚗 ${recHotel.name} → Aeroporto ${recRet.from}`, start: addMin(retDep, -120), end: addMin(retDep, -60), description: `uber | ${desc}` });
+        } else {
+          // Bate-volta: evento → aeroporto
+          events.push({ title: `🚗 ${eventLocation.split(",")[0]} → Aeroporto ${recRet.from}`, start: addMin(retDep, -90), end: addMin(retDep, -30), description: `uber | ${desc}` });
+        }
+
+        // 8. Voo de volta
+        events.push({ title: `✈️ ${recRet.airline.code} ${recRet.flightNumber} ${recRet.from}→${recRet.to}`, start: retDep, end: toISO(recRet.arrival), description: `${recRet.airline.name} | R$ ${recRet.totalPrice.toFixed(2)} | ${desc}` });
+
+        // 9. Aeroporto origem → Casa
+        const retArr = toISO(recRet.arrival);
+        events.push({ title: `🚗 Aeroporto ${recRet.to} → Casa`, start: addMin(retArr, 30), end: addMin(retArr, 90), description: `uber | ${desc}` });
+      }
+
+      if (events.length === 0) {
+        throw new Error("Nenhum evento para criar");
+      }
+
       const res = await fetch("/api/calendar/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: trip.calendarEventsToCreate }),
+        body: JSON.stringify({ events }),
       });
       if (!res.ok) throw new Error("Erro ao criar eventos na agenda");
       setBookedTrips((prev) => new Set(prev).add(tripIndex));

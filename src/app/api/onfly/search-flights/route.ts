@@ -60,9 +60,16 @@ export async function GET(request: NextRequest) {
 
     function pickBestTime(opts: Array<{ id: string; departure: string }>): string | null {
       if (opts.length === 0) return null;
-      let bestId = opts[0].id;
+      // Filter out red-eye flights (00:00-05:59) for corporate travel
+      const reasonable = opts.filter((o) => {
+        const h = new Date(o.departure).getHours();
+        return h >= 6; // No flights before 6am
+      });
+      const candidates = reasonable.length > 0 ? reasonable : opts; // fallback if ALL are red-eye
+
+      let bestId = candidates[0].id;
       let bestDist = Infinity;
-      for (const opt of opts) {
+      for (const opt of candidates) {
         const hour = new Date(opt.departure).getHours();
         const dist = (hour >= tw.min && hour <= tw.max) ? 0 : Math.min(Math.abs(hour - tw.min), Math.abs(hour - tw.max));
         if (dist < bestDist) { bestDist = dist; bestId = opt.id; }
