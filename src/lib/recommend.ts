@@ -48,7 +48,6 @@ function scoreFlight(flight: FlightResult, prefs: FlightPrefs): number {
 export function pickRecommendedFlightId(flights: FlightResult[], prefs: FlightPrefs): string | null {
   if (flights.length === 0) return null;
   const preferredCode = prefs.preferredCarrier ? CARRIER_MAP[prefs.preferredCarrier] : null;
-  console.log(`[RECOMMEND] Scoring ${flights.length} flight groups, preferred carrier: ${prefs.preferredCarrier} → code ${preferredCode}`);
 
   // Rule: prefer carrier UNLESS cheapest overall is >15% cheaper
   const cheapestOverall = Math.min(...flights.map((f) => f.cheapestTotalPrice));
@@ -57,8 +56,6 @@ export function pickRecommendedFlightId(flights: FlightResult[], prefs: FlightPr
 
   const savingsPercent = cheapestPreferred > 0 ? ((cheapestPreferred - cheapestOverall) / cheapestPreferred) * 100 : 0;
   const shouldOverrideCarrier = savingsPercent > 15;
-
-  console.log(`[RECOMMEND] Cheapest overall: R$${(cheapestOverall / 100).toFixed(0)}, cheapest ${prefs.preferredCarrier}: R$${cheapestPreferred === Infinity ? "N/A" : (cheapestPreferred / 100).toFixed(0)}, savings: ${savingsPercent.toFixed(1)}%${shouldOverrideCarrier ? " → OVERRIDE carrier (>15%)" : ""}`);
 
   let bestId = flights[0].id;
   let bestScore = Infinity;
@@ -71,14 +68,8 @@ export function pickRecommendedFlightId(flights: FlightResult[], prefs: FlightPr
       if (hasPreferred) s -= 10000; // override the base scoring
     }
 
-    const cia = flight.fares[0]?.ciaManaging?.code ?? "??";
-    const price = (flight.cheapestTotalPrice / 100).toFixed(0);
-    const match = preferredCode && cia === preferredCode ? " ★MATCH" : "";
-    console.log(`[RECOMMEND]   ${cia} R$${price} score=${s.toFixed(0)}${match}`);
     if (s < bestScore) { bestScore = s; bestId = flight.id; }
   }
-  const winnerCia = flights.find(f => f.id === bestId)?.fares[0]?.ciaManaging?.code ?? "??";
-  console.log(`[RECOMMEND] Winner: ${winnerCia} (score: ${bestScore.toFixed(0)})`);
   return bestId;
 }
 
@@ -100,6 +91,5 @@ export function pickRecommendedHotelId(hotels: HotelResult[], prefs: HotelPrefs)
     const s = scoreHotel(hotel, prefs);
     if (s < bestScore) { bestScore = s; bestId = hotel.id; }
   }
-  console.log(`[RECOMMEND] Best hotel: ${bestId} (score: ${bestScore.toFixed(0)})`);
   return bestId;
 }

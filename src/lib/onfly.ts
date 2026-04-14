@@ -105,12 +105,9 @@ export async function getInternalBffToken(
 ): Promise<string> {
   // Return cached token if still valid (with 60s margin)
   if (bffTokenCache && bffTokenCache.expiresAt > Date.now() + 60_000) {
-    console.log("[ONFLY] BFF token: cache hit (expires in " + Math.round((bffTokenCache.expiresAt - Date.now()) / 1000) + "s)");
     return bffTokenCache.token;
   }
 
-  console.log("[ONFLY] BFF token: fetching internal token from api.onfly.com/auth/token/internal...");
-  const t0 = Date.now();
   const res = await onFlyRequest<InternalTokenResponse>({
     url: "https://api.onfly.com/auth/token/internal",
     token: accessToken,
@@ -124,9 +121,8 @@ export async function getInternalBffToken(
     if (payload.exp) {
       expiresAt = payload.exp * 1000;
     }
-    console.log(`[ONFLY] BFF token: OK in ${Date.now() - t0}ms, expires at ${new Date(expiresAt).toISOString()}, user_id=${payload.user_id}`);
   } catch {
-    console.log(`[ONFLY] BFF token: OK in ${Date.now() - t0}ms (could not parse exp, using 14min fallback)`);
+    // Could not parse exp, using 14min fallback
   }
 
   bffTokenCache = { token: res.token, expiresAt };
@@ -240,8 +236,6 @@ export async function searchPoi(
   query: string
 ): Promise<{ placeId: string; description: string } | null> {
   const params = new URLSearchParams({ lang: "pt-br", search: query });
-  console.log(`[ONFLY] searchPoi("${query}")...`);
-  const t0 = Date.now();
 
   const res = await onFlyRequest<PoiAutocompleteResponse>({
     url: `${BFF_BASE}/bff/destination/cities/autocomplete?${params.toString()}`,
@@ -252,11 +246,9 @@ export async function searchPoi(
 
   const poi = res.data?.pointsOfInterest?.[0];
   if (poi) {
-    console.log(`[ONFLY] searchPoi: found "${poi.structured_formatting.main_text}" (placeId=${poi.place_id}) in ${Date.now() - t0}ms`);
     return { placeId: poi.place_id, description: poi.description };
   }
 
-  console.warn(`[ONFLY] searchPoi: no POI found for "${query}" in ${Date.now() - t0}ms`);
   return null;
 }
 
@@ -275,8 +267,6 @@ export async function searchAirports(
     useBffHeaders: true,
   });
 
-  console.log(`[ONFLY] searchAirports("${query}") raw response type=${typeof raw}, isArray=${Array.isArray(raw)}, keys=${typeof raw === "object" && raw !== null ? Object.keys(raw as Record<string, unknown>).join(",") : "n/a"}`);
-
   // Handle both { data: [...] } and direct array responses
   if (Array.isArray(raw)) return raw;
   if (typeof raw === "object" && raw !== null && "data" in (raw as Record<string, unknown>)) {
@@ -284,7 +274,6 @@ export async function searchAirports(
     if (Array.isArray(data)) return data;
   }
 
-  console.warn(`[ONFLY] searchAirports("${query}") unexpected response shape:`, JSON.stringify(raw).substring(0, 500));
   return [];
 }
 
@@ -338,8 +327,6 @@ export async function createAndSearchFlights(
     groupFlights: true,
   };
 
-  console.log(`[ONFLY] createAndSearchFlights body:`, JSON.stringify(requestBody));
-
   const res = await onFlyRequest<FlightQuoteResponse[]>({
     method: "POST",
     url: `${BFF_BASE}/bff/quote/create`,
@@ -349,7 +336,6 @@ export async function createAndSearchFlights(
     body: requestBody,
   });
 
-  console.log(`[ONFLY] createAndSearchFlights: got ${Array.isArray(res) ? res.length : 0} quote(s), first quoteId=${res?.[0]?.id ?? "none"}, flights=${res?.[0]?.response?.data?.length ?? 0}`);
   return res;
 }
 
@@ -461,8 +447,6 @@ export async function createAndSearchHotels(
     ],
   };
 
-  console.log(`[ONFLY] createAndSearchHotels body:`, JSON.stringify(requestBody));
-
   const res = await onFlyRequest<HotelQuoteResponse[]>({
     method: "POST",
     url: `${BFF_BASE}/bff/quote/create`,
@@ -472,7 +456,6 @@ export async function createAndSearchHotels(
     body: requestBody,
   });
 
-  console.log(`[ONFLY] createAndSearchHotels: got ${Array.isArray(res) ? res.length : 0} quote(s), first quoteId=${res?.[0]?.id ?? "none"}, hotels=${res?.[0]?.response?.data?.length ?? 0}`);
   return res;
 }
 
@@ -516,7 +499,6 @@ export async function searchHotels(
       sort,
     },
   };
-  console.log(`[ONFLY] searchHotels body:`, JSON.stringify(requestBody));
   // The /item endpoint returns same structure as /create: { id, item, response: { data: [...] } }
   const raw = await onFlyRequest<unknown>({
     method: "POST",
@@ -539,7 +521,6 @@ export async function searchHotels(
     hotelData = rawObj.data;
   }
 
-  console.log(`[ONFLY] searchHotels: extracted ${hotelData.length} hotels`);
   return { data: hotelData };
 }
 

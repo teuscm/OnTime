@@ -72,8 +72,6 @@ export async function GET(request: NextRequest) {
 
     const bestOutboundId = recGroup ? pickBestTime(recGroup.options.outbounds ?? []) : null;
     const bestInboundId = recGroup ? pickBestTime(recGroup.options.inbounds ?? []) : null;
-    console.log(`[FLIGHTS] Recommended: group=${recommendedGroupId?.substring(0, 8)}, outbound=${bestOutboundId?.substring(0, 8)}, inbound=${bestInboundId?.substring(0, 8)}`);
-
     // Map all options — only ONE flight per direction is recommended
     const outbound: FlightOption[] = [];
     const inbound: FlightOption[] = [];

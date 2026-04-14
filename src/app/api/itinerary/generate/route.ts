@@ -26,27 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No travel events provided" }, { status: 400 });
     }
 
-    if (onflyData) {
-      console.log(`[GENERATE] Received Onfly data for ${onflyData.length} trips`);
-      for (const d of onflyData) {
-        const scenarios = d.flightScenarios ?? [];
-        const hotels = d.hotels ?? [];
-        console.log(`[GENERATE]   "${d.eventTitle}": ${scenarios.length} flight scenarios, ${hotels.length} hotels`);
-      }
-    } else {
-      console.log("[GENERATE] No Onfly data — Claude will generate without real prices");
-    }
-
     const itinerary = await generateItinerary(preferences, travelEvents, allEvents, onflyData);
-
-    // Log Claude's recommendations
-    for (const trip of itinerary.trips) {
-      console.log(`[GENERATE] Trip "${trip.event.title}" recommendations:`);
-      console.log(`[GENERATE]   outbound flight: ${trip.recommendedFlightOutId ?? "NOT SET"}`);
-      console.log(`[GENERATE]   return flight: ${trip.recommendedFlightReturnId ?? "NOT SET"}`);
-      console.log(`[GENERATE]   hotel: ${trip.recommendedHotelId ?? "NOT SET"}`);
-      console.log(`[GENERATE]   reason: ${trip.recommendationReason ?? "NOT SET"}`);
-    }
 
     // Save each trip itinerary
     for (const trip of itinerary.trips) {

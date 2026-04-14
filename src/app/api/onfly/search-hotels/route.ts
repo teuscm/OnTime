@@ -48,18 +48,14 @@ export async function GET(request: NextRequest) {
 
     // Step 1: Resolve POI if location provided
     if (!placeId && location) {
-      console.log(`[HOTELS] Resolving POI for location: "${location}"`);
       const poi = await searchPoi(bffToken, "Bearer", location);
       if (!poi) {
         return NextResponse.json({ error: `Could not resolve location: ${location}` }, { status: 404 });
       }
       placeId = poi.placeId;
-      console.log(`[HOTELS] POI resolved: ${poi.description} (placeId=${placeId})`);
     }
 
     // Step 2: Create hotel quote
-    console.log(`[HOTELS] Creating quote: placeId=${placeId}, ${checkIn}→${checkOut}`);
-    const t0 = Date.now();
     const quotes = await createAndSearchHotels(bffToken, "Bearer", { placeId: placeId!, checkIn, checkOut });
 
     const quote = quotes?.[0];
@@ -69,7 +65,6 @@ export async function GET(request: NextRequest) {
 
     const quoteId = quote.id;
     const hotelQuoteId = quote.item.id;
-    console.log(`[HOTELS] Quote created in ${Date.now() - t0}ms — quoteId=${quoteId}, hotelQuoteId=${hotelQuoteId}`);
 
     // Step 3: Two filtered searches in parallel
     const filters = {
@@ -78,25 +73,17 @@ export async function GET(request: NextRequest) {
       poiDistanceLessThan: maxDistance,
     };
 
-    console.log(`[HOTELS] Filtered searches: distance<${maxDistance}m, price ${minPrice}-${maxPrice} centavos`);
-    const t1 = Date.now();
-
     const [recommendedRes, nearPoiRes] = await Promise.all([
       searchHotels(bffToken, "Bearer", quoteId, hotelQuoteId, filters, { key: "recommended", order: "asc" }),
       searchHotels(bffToken, "Bearer", quoteId, hotelQuoteId, filters, { key: "distanceToPoi", order: "asc" }),
     ]);
 
-    console.log(`[HOTELS] Filtered done in ${Date.now() - t1}ms — recommended=${recommendedRes.data?.length ?? 0}, nearPoi=${nearPoiRes.data?.length ?? 0}`);
-
     // Fallback: if filters are too restrictive (0 results), retry without price/distance filters
     if ((recommendedRes.data?.length ?? 0) === 0 && (nearPoiRes.data?.length ?? 0) === 0) {
-      console.log(`[HOTELS] Filters too restrictive, retrying without price/distance...`);
-      const t2 = Date.now();
       const [recFallback, nearFallback] = await Promise.all([
         searchHotels(bffToken, "Bearer", quoteId, hotelQuoteId, {}, { key: "recommended", order: "asc" }),
         searchHotels(bffToken, "Bearer", quoteId, hotelQuoteId, {}, { key: "distanceToPoi", order: "asc" }),
       ]);
-      console.log(`[HOTELS] Fallback done in ${Date.now() - t2}ms — recommended=${recFallback.data?.length ?? 0}, nearPoi=${nearFallback.data?.length ?? 0}`);
       recommendedRes.data = recFallback.data;
       nearPoiRes.data = nearFallback.data;
     }

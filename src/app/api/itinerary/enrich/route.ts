@@ -114,8 +114,6 @@ async function enrichTrip(
   airportCache: Map<string, OnflyAirport | null>
 ): Promise<EnrichedTripItinerary> {
   const enriched: EnrichedTripItinerary = { ...trip };
-  const prefix = `[ENRICH] Trip #${tripIndex} "${trip.event.title}"`;
-  console.log(`${prefix}: START`);
 
   try {
     // ─── Flights — search MULTIPLE date scenarios in parallel ───
@@ -148,8 +146,6 @@ async function enrichTrip(
         scenarios.push({ label: "Bleisure (volta domingo)", dep: dayBefore, ret: sundayStr });
       }
 
-      console.log(`${prefix}: Searching ${scenarios.length} flight scenarios: ${scenarios.map((s) => `${s.label} (${s.dep}→${s.ret})`).join(", ")}`);
-
       // Resolve airports (for deep links + hotels)
       let originAirport: OnflyAirport | null = null;
       let destAirport: OnflyAirport | null = null;
@@ -170,9 +166,7 @@ async function enrichTrip(
       // Search all scenarios in parallel
       const scenarioResults = await Promise.all(
         scenarios.map(async (scenario) => {
-          const t0 = Date.now();
           try {
-            console.log(`${prefix}: [${scenario.label}] Searching ${from}→${to} ${scenario.dep}/${scenario.ret}...`);
             const quotes = await createAndSearchFlights(bffToken, "Bearer", {
               from, to, departure: scenario.dep, returnDate: scenario.ret,
             });
@@ -180,10 +174,9 @@ async function enrichTrip(
             if (!quote) return { ...scenario, quote: null, flightData: [] as FlightResult[] };
 
             const flightData = quote.response?.data ?? [];
-            console.log(`${prefix}: [${scenario.label}] OK in ${Date.now() - t0}ms — ${flightData.length} groups, cheapest R$${flightData[0] ? (flightData[0].cheapestTotalPrice / 100).toFixed(2) : "N/A"}`);
             return { ...scenario, quote, flightData };
           } catch (err) {
-            console.error(`${prefix}: [${scenario.label}] FAILED in ${Date.now() - t0}ms`, err);
+            console.error(`[ENRICH] Trip #${tripIndex} [${scenario.label}] FAILED`, err);
             return { ...scenario, quote: null, flightData: [] as FlightResult[] };
           }
         })
@@ -244,10 +237,6 @@ async function enrichTrip(
         const cheapestIdx = flightScenarios.reduce((best, s, i) => s.cheapestTotal < flightScenarios[best].cheapestTotal ? i : best, 0);
         flightScenarios[cheapestIdx].recommended = true;
 
-        for (const s of flightScenarios) {
-          console.log(`${prefix}: Scenario "${s.label}" ${s.departureDate}/${s.returnDate}: cheapest R$${s.cheapestTotal.toFixed(2)}, outbound=${s.outbound?.options.length ?? 0}, inbound=${s.inbound?.options.length ?? 0}${s.recommended ? " ★ BEST" : ""}`);
-        }
-
         // Use the recommended scenario for the main enrichment (backward compat)
         const best = flightScenarios.find((s) => s.recommended) ?? flightScenarios[0];
         enriched.flightOutbound = best.outbound;
@@ -255,8 +244,6 @@ async function enrichTrip(
       }
 
       enriched.flightScenarios = flightScenarios;
-    } else {
-      console.log(`${prefix}: No flight transport, skipping`);
     }
 
     // ─── Hotels (single call — creates quote + returns results) ───
@@ -268,10 +255,8 @@ async function enrichTrip(
       }
 
       const cityPlaceId = destAirport?.city?.placeId;
-      console.log(`${prefix}: Hotel needed: ${trip.hotel.checkIn}→${trip.hotel.checkOut}, placeId=${cityPlaceId ?? "NOT AVAILABLE"} (${destAirport?.city?.name ?? "?"})`);
 
       if (cityPlaceId) {
-        const t0 = Date.now();
         try {
           const quotes = await createAndSearchHotels(bffToken, "Bearer", {
             placeId: cityPlaceId,
@@ -280,17 +265,9 @@ async function enrichTrip(
           });
 
           const quote = quotes?.[0];
-          if (!quote) {
-            console.warn(`${prefix}: No hotel quote returned`);
-          } else {
+          if (quote) {
             const quoteId = quote.id;
             const hotelData = quote.response?.data ?? [];
-            console.log(`${prefix}: Hotel quote OK in ${Date.now() - t0}ms — quoteId=${quoteId}, ${hotelData.length} hotels`);
-
-            if (hotelData.length > 0) {
-              const sample = hotelData[0];
-              console.log(`${prefix}: First hotel: "${sample.name}" ${sample.stars}*, R$${(sample.cheapestDailyPrice / 100).toFixed(2)}/noite, cafe=${sample.breakfast}, bairro=${sample.address?.district ?? sample.neighborhood ?? "?"}`);
-            }
 
             const recommendedId = pickRecommendedHotelId(hotelData, prefs);
             const nights = nightsBetween(trip.hotel.checkIn, trip.hotel.checkOut);
@@ -301,24 +278,18 @@ async function enrichTrip(
               quoteId,
               checkoutLink: `${CHECKOUT_BASE}/${quoteId}`,
             };
-            console.log(`${prefix}: Hotel enriched: ${enriched.hotelResults.recommended.length} options, ${nights} nights`);
           }
         } catch (err) {
-          console.error(`${prefix}: Hotel FAILED`, err);
+          console.error(`[ENRICH] Trip #${tripIndex} Hotel FAILED`, err);
         }
-      } else {
-        console.warn(`${prefix}: Cannot search hotels — no city placeId`);
       }
-    } else {
-      console.log(`${prefix}: No hotel needed`);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error(`${prefix}: FATAL`, msg);
+    console.error(`[ENRICH] Trip #${tripIndex} FATAL`, msg);
     enriched.enrichmentError = msg;
   }
 
-  console.log(`${prefix}: DONE — outbound=${enriched.flightOutbound ? enriched.flightOutbound.options.length + " flights" : "null"}, return=${enriched.flightReturn ? enriched.flightReturn.options.length + " flights" : "null"}, hotels=${enriched.hotelResults ? enriched.hotelResults.recommended.length + " hotels" : "null"}`);
   return enriched;
 }
 
@@ -343,12 +314,9 @@ async function resolveAirport(
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  console.log("[ENRICH] ═══════════════════════════════════════════════");
-  console.log("[ENRICH] POST /api/itinerary/enrich — START");
 
   try {
     const session = await requireSession();
-    console.log(`[ENRICH] Session OK — user=${session.onflyUserId}`);
 
     const prefsRow = await getPreferences(session.onflyUserId);
     if (!prefsRow) {
@@ -356,12 +324,9 @@ export async function POST(request: NextRequest) {
     }
 
     const preferences = dbRowToPreferences(prefsRow);
-    console.log(`[ENRICH] Prefs: carrier=${preferences.preferredCarrier || "any"}, time=${preferences.timePreference}, breakfast=${preferences.hotelBreakfastRequired}`);
 
     // Fetch internal BFF token
-    console.log("[ENRICH] Fetching BFF token...");
     const bffToken = await getInternalBffToken(session.accessToken, session.tokenType);
-    console.log(`[ENRICH] BFF token OK`);
 
     const body = await request.json();
     // Accept either full TripItinerary[] or raw CalendarEvent[] (new flow)
@@ -370,13 +335,11 @@ export async function POST(request: NextRequest) {
 
     // If events are provided (new flow), build minimal trip stubs from them
     if (events?.length && (!trips || trips.length === 0)) {
-      console.log(`[ENRICH] Received ${events.length} raw calendar events, building trip stubs from preferences`);
       const homeAirport = preferences.homeAirport || "CNF";
       const style = preferences.itineraryStyle;
 
       trips = events.map((event) => {
         const destCode = resolveDestinationCode(event.location ?? "");
-        console.log(`[ENRICH] Event "${event.title}" location="${event.location}" → dest code: ${destCode ?? "UNKNOWN"}`);
         const eventDate = new Date(event.start);
         const departureDate = style === "buffer" && preferences.bufferArriveDayBefore
           ? new Date(eventDate.getTime() - 86400000).toISOString().split("T")[0]
@@ -414,7 +377,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`[ENRICH] ${trips?.length ?? 0} trips to enrich`);
     if (!trips?.length) return NextResponse.json({ data: [] });
 
     const prefs = {
@@ -431,9 +393,6 @@ export async function POST(request: NextRequest) {
         enrichTrip(bffToken, session.accessToken, session.tokenType, trip, i, prefs, airportCache)
       )
     );
-
-    console.log(`[ENRICH] ALL DONE in ${Date.now() - startTime}ms`);
-    console.log("[ENRICH] ═══════════════════════════════════════════════");
 
     return NextResponse.json({ data: enriched });
   } catch (error) {

@@ -51,22 +51,16 @@ export async function GET(request: NextRequest) {
     if (minPrice) filters.priceDailyMin = parseInt(minPrice);
     if (maxPrice) filters.priceDailyMax = parseInt(maxPrice);
 
-    console.log(`[HOTEL-FILTER] sort=${sortKey}, filters=${JSON.stringify(filters)}`);
-    const t0 = Date.now();
-
     let res = await searchHotels(bffToken, "Bearer", quoteId, hotelQuoteId, filters, { key: sortKey, order: "asc" });
 
     // Fallback: if filters too restrictive, retry with wide defaults
     if ((res.data?.length ?? 0) === 0 && Object.keys(filters).length > 0) {
-      console.log(`[HOTEL-FILTER] 0 results with filters, retrying with wide defaults...`);
       res = await searchHotels(bffToken, "Bearer", quoteId, hotelQuoteId, {
         priceDailyMin: 5000,
         priceDailyMax: 500000,
         poiDistanceLessThan: 10000,
       }, { key: sortKey, order: "asc" });
     }
-
-    console.log(`[HOTEL-FILTER] Done in ${Date.now() - t0}ms — ${res.data?.length ?? 0} hotels (sort: ${sortKey})`);
 
     const prefsRow = await getPreferences(session.onflyUserId);
     const prefs = prefsRow ? dbRowToPreferences(prefsRow) : null;
