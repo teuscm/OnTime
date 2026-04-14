@@ -1045,149 +1045,122 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
                     )}
                   </button>
 
-                  {expanded && (
+                  {expanded && (() => {
+                    // Build unified chronological timeline
+                    const enriched = enrichedTrips?.[i];
+                    const recOut = enriched?.flightOutbound?.options.find((f) => f.recommended);
+                    const recRet = enriched?.flightReturn?.options.find((f) => f.recommended);
+                    const recHotel = enriched?.hotelResults?.recommended?.find((h) => h.recommended) ?? enriched?.hotelResults?.recommended?.[0];
+                    const needsHotel = trip.hotel?.needed && recHotel;
+                    const eventLoc = trip.event.location?.split(",")[0] ?? "Evento";
+                    const toTime = (dt: string) => dt?.replace(" ", "T").slice(11, 16) ?? "";
+
+                    type TItem = { sortKey: string; icon: typeof Plane; title: string; subtitle: string; badge: string; badgeClass: string; price?: string; conflict?: { event: string; suggestion: string } };
+                    const items: TItem[] = [];
+
+                    if (recOut) {
+                      const outDep = recOut.departure.replace(" ", "T");
+                      const outArr = recOut.arrival.replace(" ", "T");
+                      const outDepH = parseInt(toTime(outDep).split(":")[0]);
+
+                      // Casa → Aeroporto
+                      items.push({ sortKey: `${outDep.slice(0, 10)}T${String(Math.max(0, outDepH - 2)).padStart(2, "0")}:00`, icon: Car, title: `Casa → Aeroporto ${recOut.from}`, subtitle: `${String(Math.max(0, outDepH - 2)).padStart(2, "0")}:00 — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+
+                      // Voo ida
+                      items.push({ sortKey: outDep, icon: Plane, title: `${recOut.airline.code} ${recOut.flightNumber} ${recOut.from}→${recOut.to}`, subtitle: `${toTime(outDep)}–${toTime(outArr)} · ${recOut.duration}min · ${recOut.stops === 0 ? "Direto" : recOut.stops + "p"}`, badge: "Ida", badgeClass: "border-primary/20 text-primary", price: `R$ ${recOut.totalPrice.toFixed(2).replace(".", ",")}` });
+
+                      // Aeroporto → Hotel ou Evento
+                      if (needsHotel) {
+                        items.push({ sortKey: `${outArr.slice(0, 16)}:30`, icon: Car, title: `Aeroporto ${recOut.to} → ${recHotel!.name}`, subtitle: `${toTime(outArr)} — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                      } else {
+                        items.push({ sortKey: `${outArr.slice(0, 16)}:30`, icon: Car, title: `Aeroporto ${recOut.to} → ${eventLoc}`, subtitle: `${toTime(outArr)} — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                      }
+                    }
+
+                    // Hotel check-in
+                    if (needsHotel && trip.hotel?.checkIn) {
+                      items.push({ sortKey: `${trip.hotel.checkIn}T15:00`, icon: Hotel, title: `${recHotel!.name} ${"★".repeat(recHotel!.stars)}`, subtitle: `Check-in ${trip.hotel.checkIn} · ${recHotel!.breakfast ? "Café incluso" : ""} · ${recHotel!.neighborhood}`, badge: "Hotel", badgeClass: "border-primary/20 text-primary", price: `R$ ${recHotel!.pricePerNight.toFixed(2).replace(".", ",")}/n` });
+                    }
+
+                    // Hotel → Evento
+                    if (needsHotel) {
+                      const evtTime = trip.event.datetime.slice(11, 16) || "09:00";
+                      const evtH = parseInt(evtTime.split(":")[0]);
+                      const evtDate = trip.event.datetime.slice(0, 10);
+                      items.push({ sortKey: `${evtDate}T${String(Math.max(0, evtH - 1)).padStart(2, "0")}:00`, icon: Car, title: `${recHotel!.name} → ${eventLoc}`, subtitle: `${String(Math.max(0, evtH - 1)).padStart(2, "0")}:00 — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                    }
+
+                    // Evento
+                    items.push({ sortKey: trip.event.datetime.replace(" ", "T"), icon: Calendar, title: trip.event.title, subtitle: `${trip.event.datetime.slice(11, 16) || "09:00"} · ${trip.event.durationHours}h · ${eventLoc}`, badge: "Evento", badgeClass: "border-emerald-500/20 text-emerald-500" });
+
+                    // Evento → Hotel
+                    if (needsHotel) {
+                      const evtEndTime = new Date(new Date(trip.event.datetime.replace(" ", "T")).getTime() + trip.event.durationHours * 3600000);
+                      const endStr = `${evtEndTime.getFullYear()}-${String(evtEndTime.getMonth() + 1).padStart(2, "0")}-${String(evtEndTime.getDate()).padStart(2, "0")}T${String(evtEndTime.getHours()).padStart(2, "0")}:${String(evtEndTime.getMinutes()).padStart(2, "0")}`;
+                      items.push({ sortKey: endStr, icon: Car, title: `${eventLoc} → ${recHotel!.name}`, subtitle: `${endStr.slice(11, 16)} — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                    }
+
+                    if (recRet) {
+                      const retDep = recRet.departure.replace(" ", "T");
+                      const retArr = recRet.arrival.replace(" ", "T");
+                      const retDepH = parseInt(toTime(retDep).split(":")[0]);
+
+                      // Hotel/Evento → Aeroporto
+                      if (needsHotel) {
+                        items.push({ sortKey: `${retDep.slice(0, 10)}T${String(Math.max(0, retDepH - 2)).padStart(2, "0")}:00`, icon: Car, title: `${recHotel!.name} → Aeroporto ${recRet.from}`, subtitle: `${String(Math.max(0, retDepH - 2)).padStart(2, "0")}:00 — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                      } else {
+                        items.push({ sortKey: `${retDep.slice(0, 10)}T${String(Math.max(0, retDepH - 1)).padStart(2, "0")}:30`, icon: Car, title: `${eventLoc} → Aeroporto ${recRet.from}`, subtitle: `${String(Math.max(0, retDepH - 1)).padStart(2, "0")}:30 — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                      }
+
+                      // Voo volta
+                      items.push({ sortKey: retDep, icon: Plane, title: `${recRet.airline.code} ${recRet.flightNumber} ${recRet.from}→${recRet.to}`, subtitle: `${toTime(retDep)}–${toTime(retArr)} · ${recRet.duration}min · ${recRet.stops === 0 ? "Direto" : recRet.stops + "p"}`, badge: "Volta", badgeClass: "border-primary/20 text-primary", price: `R$ ${recRet.totalPrice.toFixed(2).replace(".", ",")}` });
+
+                      // Aeroporto → Casa
+                      items.push({ sortKey: `${retArr.slice(0, 16)}:30`, icon: Car, title: `Aeroporto ${recRet.to} → Casa`, subtitle: `${toTime(retArr)} — uber`, badge: "Mobilidade", badgeClass: "border-muted-foreground/20 text-muted-foreground" });
+                    }
+
+                    // Sort chronologically
+                    items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+                    // Map conflicts to timeline items
+                    const conflictMap = new Map<string, typeof trip.conflicts[0]>();
+                    for (const c of trip.conflicts) {
+                      conflictMap.set(c.event, c);
+                    }
+
+                    return (
                     <div className="border-t border-border/50 animate-fade-in">
-                      {/* Transport legs */}
-                      {trip.transport && (
-                        <div className="p-5 space-y-2">
-                          {[
-                            { label: `${trip.transport.outbound.origin} → ${trip.transport.outbound.destination}`, time: `${trip.transport.outbound.suggestedDate} às ${trip.transport.outbound.suggestedTime}`, icon: Plane, tag: "Ida", detail: trip.transport.outbound.reason, enrichment: enrichedTrips?.[i]?.flightOutbound },
-                            { label: `${trip.transport.return.origin} → ${trip.transport.return.destination}`, time: `${trip.transport.return.suggestedDate} às ${trip.transport.return.suggestedTime}`, icon: Plane, tag: "Volta", detail: trip.transport.return.reason, enrichment: enrichedTrips?.[i]?.flightReturn },
-                          ].map((leg, j) => (
-                            <div key={j} className="space-y-1.5">
-                              <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
-                                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                  <leg.icon className="w-4 h-4 text-primary" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{leg.label}</p>
-                                  <p className="text-xs text-muted-foreground">{leg.time}</p>
-                                  {leg.detail && <p className="text-xs text-muted-foreground mt-0.5">{leg.detail}</p>}
-                                </div>
-                                <Badge variant="outline" className="text-[10px] border-primary/20 text-primary shrink-0">{leg.tag}</Badge>
-                              </div>
-                              {/* Enriched flight options */}
-                              {leg.enrichment && leg.enrichment.options.length > 0 && (
-                                <div className="ml-11 space-y-1">
-                                  {[...leg.enrichment.options].sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0)).slice(0, 3).map((flight) => (
-                                    <div key={flight.id} className={cn("flex items-center justify-between p-2 rounded-lg text-xs", flight.recommended ? "bg-primary/10 border border-primary/20" : "bg-muted/30")}>
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-mono font-semibold text-[11px] bg-card px-1.5 py-0.5 rounded">{flight.airline.code}</span>
-                                        <span className="text-muted-foreground">{flight.from}→{flight.to}</span>
-                                        <span className="text-muted-foreground">{flight.stops === 0 ? "Direto" : `${flight.stops}p`}</span>
-                                        <span className="text-muted-foreground">{flight.duration}min</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        {flight.recommended && <Badge className="text-[9px] h-4 bg-primary/20 text-primary border-0">IA</Badge>}
-                                        <span className="font-semibold">R$ {flight.totalPrice.toFixed(2).replace(".", ",")}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                      {/* Conflicts banner */}
+                      {trip.conflicts.length > 0 && (
+                        <div className="mx-5 mt-4 p-3 rounded-xl bg-amber-500/[0.06] border border-amber-500/10">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span className="text-xs font-semibold text-amber-400">{trip.conflicts.length} conflito{trip.conflicts.length > 1 ? "s" : ""}</span>
+                          </div>
+                          {trip.conflicts.map((c, j) => (
+                            <p key={j} className="text-xs text-muted-foreground mt-1">{c.event} ({c.originalTime}) — {c.suggestion}</p>
                           ))}
                         </div>
                       )}
 
-                      {/* Hotel */}
-                      {trip.hotel?.needed && (
-                        <div className="px-5 pb-4 space-y-1.5">
-                          <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
-                            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                              <Hotel className="w-4 h-4 text-primary" />
+                      {/* Chronological timeline */}
+                      <div className="p-5 space-y-1">
+                        {items.map((item, j) => (
+                          <div key={j} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", item.badge === "Evento" ? "bg-emerald-500/10" : "bg-primary/10")}>
+                              <item.icon className={cn("w-4 h-4", item.badge === "Evento" ? "text-emerald-500" : "text-primary")} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium">Hospedagem</p>
-                              <p className="text-xs text-muted-foreground">Check-in: {trip.hotel.checkIn} | Check-out: {trip.hotel.checkOut}</p>
-                              {trip.hotel.preferences && <p className="text-xs text-muted-foreground">{trip.hotel.preferences}</p>}
+                              <p className="text-sm font-medium truncate">{item.title}</p>
+                              <p className="text-xs text-muted-foreground">{item.subtitle}</p>
                             </div>
-                            <Badge variant="outline" className="text-[10px] border-primary/20 text-primary shrink-0">Hotel</Badge>
-                          </div>
-                          {/* Enriched hotel options */}
-                          {enrichedTrips?.[i]?.hotelResults && (enrichedTrips[i].hotelResults!.recommended?.length > 0 || enrichedTrips[i].hotelResults!.nearPoi?.length > 0) && (
-                            <div className="ml-11 space-y-1">
-                              {[...(enrichedTrips[i].hotelResults!.recommended ?? [])].sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0)).slice(0, 3).map((hotel) => (
-                                <div key={hotel.id} className={cn("flex items-center justify-between p-2 rounded-lg text-xs", hotel.recommended ? "bg-primary/10 border border-primary/20" : "bg-muted/30")}>
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="font-medium truncate">{hotel.name}</span>
-                                    <span className="text-muted-foreground shrink-0">{"★".repeat(hotel.stars)}</span>
-                                    {hotel.breakfast && <span className="text-emerald-400 shrink-0">Cafe</span>}
-                                    {hotel.agreement && <span className="text-primary shrink-0">Acordo</span>}
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    {hotel.recommended && <Badge className="text-[9px] h-4 bg-primary/20 text-primary border-0">IA</Badge>}
-                                    <span className="font-semibold">R$ {hotel.pricePerNight.toFixed(2).replace(".", ",")}/n</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Mobility */}
-                      {trip.mobility.length > 0 && (
-                        <div className="px-5 pb-4 space-y-2">
-                          {trip.mobility.map((leg, j) => (
-                            <div key={j} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
-                              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                <Car className="w-4 h-4 text-primary" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{leg.leg}</p>
-                                <p className="text-xs text-muted-foreground">{leg.time} — {leg.type}</p>
-                              </div>
-                              <Badge variant="outline" className="text-[10px] border-primary/20 text-primary shrink-0">Mobilidade</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Conflicts */}
-                      {trip.conflicts.length > 0 && (
-                        <div className="px-5 pb-4">
-                          <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/10">
-                            <div className="flex items-center gap-2 mb-3">
-                              <AlertTriangle className="w-4 h-4 text-amber-400" />
-                              <span className="text-xs font-semibold text-amber-400">
-                                {trip.conflicts.length} conflito{trip.conflicts.length > 1 ? "s" : ""} detectado{trip.conflicts.length > 1 ? "s" : ""}
-                              </span>
-                            </div>
-                            {trip.conflicts.map((conflict, j) => (
-                              <div key={j} className="mb-2 last:mb-0">
-                                <p className="text-sm font-medium">{conflict.event}</p>
-                                <p className="text-xs text-muted-foreground">{conflict.originalTime} — {conflict.conflictReason}</p>
-                                <p className="text-sm text-amber-400 mt-1">{conflict.suggestion}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Bleisure */}
-                      {trip.bleisure?.eligible && (
-                        <div className="px-5 pb-4">
-                          <div className="p-4 rounded-xl gradient-onhappy-soft border border-onhappy/20">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <Sparkles className="w-5 h-5 text-secondary shrink-0" />
-                                <div>
-                                  <p className="text-sm font-medium">Bleisure disponível</p>
-                                  <p className="text-xs text-muted-foreground">{trip.bleisure.reason}</p>
-                                </div>
-                              </div>
-                              {isSafeUrl(trip.bleisure.onhappyLink) && (
-                                <Button variant="onhappy" size="sm" asChild>
-                                  <a href={trip.bleisure.onhappyLink} target="_blank" rel="noopener noreferrer">
-                                    Ver tarifas<ExternalLink className="w-3 h-3 ml-1.5" />
-                                  </a>
-                                </Button>
-                              )}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {item.price && <span className="text-xs font-semibold">{item.price}</span>}
+                              <Badge variant="outline" className={cn("text-[10px]", item.badgeClass)}>{item.badge}</Badge>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        ))}
+                      </div>
 
                       {/* Actions */}
                       <div className="px-5 pb-5 flex items-center gap-3">
@@ -1245,7 +1218,8 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
                         )}
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </Card>
               );
             })}
