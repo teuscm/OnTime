@@ -40,6 +40,8 @@ async function migrate(): Promise<void> {
         mobility_preference TEXT DEFAULT 'rideshare',
         bleisure_enabled INTEGER DEFAULT 0,
         bleisure_with_companion INTEGER DEFAULT 0,
+        hotel_max_daily_price INTEGER DEFAULT 500000,
+        hotel_max_distance INTEGER DEFAULT 2000,
         onboarding_completed INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
@@ -73,6 +75,20 @@ async function migrate(): Promise<void> {
       args: [],
     },
   ]);
+
+  // Add columns that may be missing on existing tables
+  const alterStatements = [
+    "ALTER TABLE user_preferences ADD COLUMN hotel_max_daily_price INTEGER DEFAULT 500000",
+    "ALTER TABLE user_preferences ADD COLUMN hotel_max_distance INTEGER DEFAULT 2000",
+  ];
+  for (const sql of alterStatements) {
+    try {
+      await db.execute({ sql, args: [] });
+    } catch {
+      // Column already exists — ignore
+    }
+  }
+
   migrated = true;
 }
 
@@ -101,6 +117,8 @@ const PREFERENCE_COLUMNS = new Set([
   "mobility_preference",
   "bleisure_enabled",
   "bleisure_with_companion",
+  "hotel_max_daily_price",
+  "hotel_max_distance",
   "onboarding_completed",
 ]);
 
@@ -126,6 +144,8 @@ export function dbRowToPreferences(row: Record<string, unknown>): UserPreference
     mobilityPreference: (row.mobility_preference as UserPreferences["mobilityPreference"]) ?? "rideshare",
     bleisureEnabled: (row.bleisure_enabled as number) === 1,
     bleisureWithCompanion: (row.bleisure_with_companion as number) === 1,
+    hotelMaxDailyPrice: (row.hotel_max_daily_price as number) ?? 500000,
+    hotelMaxDistance: (row.hotel_max_distance as number) ?? 2000,
     onboardingCompleted: (row.onboarding_completed as number) === 1,
   };
 }

@@ -29,14 +29,14 @@ export async function GET() {
       });
     }
 
-    // Fetch next 30 days
+    // Fetch next 60 days
     const now = new Date();
-    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysLater = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
     const events = await fetchEvents(
       accessToken,
       now.toISOString(),
-      thirtyDaysLater.toISOString()
+      sixtyDaysLater.toISOString()
     );
 
     const mapped = events.map((e) => ({

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Plane,
   Bus,
@@ -55,6 +56,8 @@ interface Prefs {
   hotelShareRoom: boolean;
   hotelBreakfastRequired: boolean;
   hotelType: string;
+  hotelMaxDailyPrice: number;
+  hotelMaxDistance: number;
   prefersRentalCar: boolean;
   mobilityPreference: "rideshare" | "taxi";
   bleisureEnabled: boolean;
@@ -80,6 +83,8 @@ export function OnboardingWizard() {
     hotelShareRoom: false,
     hotelBreakfastRequired: true,
     hotelType: "",
+    hotelMaxDailyPrice: 50000,   // R$ 500 default (centavos)
+    hotelMaxDistance: 2000,       // 2km default (metros)
     prefersRentalCar: false,
     mobilityPreference: "rideshare",
     bleisureEnabled: false,
@@ -315,6 +320,30 @@ export function OnboardingWizard() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground mb-3 block">Diária máxima</label>
+              <Slider
+                value={prefs.hotelMaxDailyPrice}
+                min={5000}
+                max={200000}
+                step={5000}
+                onChange={(v) => update("hotelMaxDailyPrice", v)}
+                formatLabel={(v) => `R$ ${(v / 100).toFixed(0)}`}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground mb-3 block">Distância máxima do evento</label>
+              <Slider
+                value={prefs.hotelMaxDistance}
+                min={500}
+                max={10000}
+                step={500}
+                onChange={(v) => update("hotelMaxDistance", v)}
+                formatLabel={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)} km` : `${v}m`}
+              />
             </div>
           </>
         )}

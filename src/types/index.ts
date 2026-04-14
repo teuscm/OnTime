@@ -59,6 +59,10 @@ export interface UserPreferences {
   bleisureEnabled: boolean;
   bleisureWithCompanion: boolean;
 
+  // Hotel search defaults
+  hotelMaxDailyPrice: number;  // centavos (default 500000 = R$5.000)
+  hotelMaxDistance: number;     // meters (default 2000 = 2km)
+
   // Meta
   onboardingCompleted: boolean;
 }
@@ -140,6 +144,10 @@ export interface TripItinerary {
     checkOut?: string;
     preferences?: string;
   } | null;
+  recommendedFlightOutId?: string;
+  recommendedFlightReturnId?: string;
+  recommendedHotelId?: string;
+  recommendationReason?: string;
   mobility: MobilityLeg[];
   conflicts: ConflictDetection[];
   bleisure: BleisureSuggestion | null;
@@ -151,6 +159,87 @@ export interface ItineraryResponse {
 }
 
 export type ItineraryStatus = "suggested" | "confirmed" | "booked";
+
+// ─── Onfly Enrichment ───────────────────────────────────────
+
+export interface ResolvedAirport {
+  id: string;
+  code: string;
+  name: string;
+  placeId: string;
+  city: {
+    name: string;
+    stateCode: string;
+    countryCode: string;
+    placeId: string;
+  };
+}
+
+export interface FlightOption {
+  id: string;
+  airline: { code: string; name: string };
+  from: string;      // IATA airport code (e.g. "CNF")
+  to: string;        // IATA airport code (e.g. "GRU", "CGH")
+  price: number;
+  totalPrice: number;
+  duration: number;
+  departure: string;
+  arrival: string;
+  stops: number;
+  flightNumber: number;
+  fareFamily: string;
+  refundable: boolean;
+  recommended: boolean;
+}
+
+export interface HotelOption {
+  id: string;
+  name: string;
+  stars: number;
+  pricePerNight: number;
+  totalPrice: number;
+  breakfast: boolean;
+  refundable: boolean;
+  agreement: boolean;
+  thumb: string;
+  neighborhood: string;
+  amenities: string[];
+  recommended: boolean;
+}
+
+export interface FlightEnrichment {
+  origin: ResolvedAirport;
+  destination: ResolvedAirport;
+  options: FlightOption[];
+  quoteId: string;
+  checkoutLink: string;
+}
+
+export interface FlightScenario {
+  label: string;                // "Bate-volta" | "Com buffer"
+  departureDate: string;
+  returnDate: string;
+  outbound: FlightEnrichment | null;
+  inbound: FlightEnrichment | null;
+  cheapestTotal: number;        // cheapest round-trip price (BRL)
+  recommended: boolean;
+}
+
+export interface HotelEnrichment {
+  recommended: HotelOption[];
+  nearPoi: HotelOption[];
+  quoteId: string;
+  hotelQuoteId?: string;
+  checkoutLink: string;
+}
+
+export interface EnrichedTripItinerary extends TripItinerary {
+  flightOutbound?: FlightEnrichment | null;
+  flightReturn?: FlightEnrichment | null;
+  flightScenarios?: FlightScenario[];
+  hotelResults?: HotelEnrichment | null;
+  enrichmentError?: string;
+}
 
 // ─── API Responses ───────────────────────────────────────────
 export interface ApiError {

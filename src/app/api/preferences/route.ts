@@ -46,6 +46,8 @@ export async function POST(request: NextRequest) {
       mobilityPreference: "mobility_preference",
       bleisureEnabled: "bleisure_enabled",
       bleisureWithCompanion: "bleisure_with_companion",
+      hotelMaxDailyPrice: "hotel_max_daily_price",
+      hotelMaxDistance: "hotel_max_distance",
       onboardingCompleted: "onboarding_completed",
     };
 

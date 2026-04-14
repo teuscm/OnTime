@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { UserPreferences, CalendarEvent, ItineraryResponse } from "@/types";
+import type { UserPreferences, CalendarEvent, ItineraryResponse, FlightOption, HotelOption } from "@/types";
 
 const client = new Anthropic();
 
@@ -35,6 +35,10 @@ const ITINERARY_SCHEMA = JSON.stringify({
         checkOut: "YYYY-MM-DD (optional)",
         preferences: "string (optional)",
       },
+      recommendedFlightOutId: "string — ID of the best outbound flight from onfly_flights_outbound",
+      recommendedFlightReturnId: "string — ID of the best return flight from onfly_flights_return",
+      recommendedHotelId: "string — ID of the best hotel from onfly_hotels",
+      recommendationReason: "string — 1-2 sentences explaining why these were chosen",
       mobility: [
         {
           leg: "string (description of route)",
@@ -93,17 +97,33 @@ function getRelevantConflictEvents(
   });
 }
 
+export interface OnflyDataForClaude {
+  eventId: string;
+  eventTitle: string;
+  flightScenarios: Array<{
+    label: string;
+    dates: string;
+    cheapestPrice: number;
+    recommended?: boolean;
+    outbound: Array<{ id: string; cia: string; dep: string; dur: number; stops: number; price: number; rec?: boolean }>;
+    inbound: Array<{ id: string; cia: string; dep: string; dur: number; stops: number; price: number; rec?: boolean }>;
+  }>;
+  hotels: Array<{ id: string; name: string; stars: number; price: number; cafe?: boolean; rec?: boolean }>;
+}
+
 export async function generateItinerary(
   preferences: UserPreferences,
   events: CalendarEvent[],
-  allCalendarEvents: CalendarEvent[]
+  allCalendarEvents: CalendarEvent[],
+  onflyData?: OnflyDataForClaude[]
 ): Promise<ItineraryResponse> {
-  // Only send events within travel windows for conflict detection
   const conflictCandidates = getRelevantConflictEvents(events, allCalendarEvents);
+
+  const hasOnflyData = onflyData && onflyData.length > 0;
 
   const systemPrompt = `You are OnTime, an AI corporate travel planner integrated with Onfly.
 
-Given a traveler's calendar events and personal preferences, generate an optimized travel itinerary for each trip.
+Given a traveler's calendar events, personal preferences${hasOnflyData ? ", and REAL flight/hotel search results from Onfly" : ""}, generate an optimized travel itinerary for each trip.
 
 ## User Preferences
 ${JSON.stringify(preferences, null, 2)}
@@ -119,40 +139,67 @@ ${preferences.homeCity} (nearest airport: ${preferences.homeAirport})
    - Hotel: only if itinerary style is "buffer" or meeting spans multiple days
    - Return: reverse of above
 
-2. Apply itinerary style from preferences:
-   - "same_day": same-day round trip, tight schedule
-   - "buffer": arrive day before and/or leave day after, relaxed
+2. Apply itinerary style:
+   - "same_day": same-day round trip
+   - "buffer": arrive day before and/or leave day after
 
-3. Apply all preferences:
+3. Preferences:
    - Preferred carrier: ${preferences.preferredCarrier || "any"}
    - Hotel: ${preferences.hotelShareRoom ? "shared room OK" : "single room"}, ${preferences.hotelBreakfastRequired ? "breakfast required" : "breakfast optional"}, type: ${preferences.hotelType || "any"}
    - Mobility: ${preferences.prefersRentalCar ? "rental car preferred" : `${preferences.mobilityPreference} preferred`}
    - Time preference: ${preferences.timePreference}
 
-4. Detect conflicts with other calendar events during travel time.
+${hasOnflyData ? `4. **CRITICAL — Pick from REAL Onfly data:**
+   The data includes MULTIPLE flight scenarios (e.g., "Bate-volta", "Com buffer", "Bleisure (volta domingo)") with real prices. You must:
+
+   a) **Pick the BEST SCENARIO** — Compare total costs across scenarios. Consider:
+      - Flight price differences between scenarios
+      - Hotel cost (if buffer/bleisure adds nights)
+      - Whether bleisure saves money on the flight (weekend return is often cheaper)
+      - User's preference for buffer style: "${preferences.itineraryStyle}"
+
+   b) **Pick the best FLIGHT within the chosen scenario:**
+      - The user prefers "${preferences.preferredCarrier || "any"}". ALWAYS pick ${preferences.preferredCarrier || "any"} UNLESS cheapest overall is >15% cheaper.
+      - Among preferred carrier: pick ${preferences.timePreference} departures, then cheaper, then shorter.
+      - Set recommendedFlightOutId and recommendedFlightReturnId to IDs from the chosen scenario.
+
+   c) **Pick the best HOTEL:**
+      ${preferences.hotelBreakfastRequired ? "Breakfast included is MANDATORY." : "Breakfast is optional."} Prefer corporate agreement, then 3-4 stars, then cheapest.
+      Hotel covers ONLY corporate nights (not bleisure weekend — weekend uses OnHappy).
+
+   d) **Explain in recommendationReason** (2-3 sentences in Portuguese):
+      - Which scenario you chose and why
+      - Price comparison between scenarios ("Bate-volta R$X vs Buffer R$Y vs Bleisure R$Z")
+      - If bleisure is cheapest, mention the OnHappy opportunity for the weekend
+
+   - Use the ACTUAL departure/arrival times from the recommended flight for the transport section` : ""}
+
+5. Detect conflicts with other calendar events during travel time.
    For each conflict suggest ONE of:
    - "Participar remoto" (if meeting can be remote)
    - "Mover para [novo horário]" (suggest specific alternative)
 
-5. Bleisure check: if user opted in (${preferences.bleisureEnabled}) AND trip touches Thu/Fri/weekend,
-   flag as bleisure eligible and generate OnHappy deep link:
+6. Bleisure: if user opted in (${preferences.bleisureEnabled}) AND trip touches Thu/Fri/weekend,
+   flag as eligible with OnHappy link:
    https://app.onhappy.com.br/hotel-search?guests=18,18&checkin={date}&checkout={date}&description={city}&type=user
 
-6. Generate calendar events to create:
-   - Each leg of transport with emoji prefix (🚗 🚌 ✈️ 🏨)
-   - Use full ISO 8601 datetime for start/end
-   - Include "Criado pelo OnTime | Onfly" in description
+7. Calendar events to create: each leg with emoji prefix (🚗 🚌 ✈️ 🏨), ISO 8601 datetimes
 
 Respond ONLY with valid JSON. No markdown. No explanation.
 Schema: ${ITINERARY_SCHEMA}`;
 
-  const userMessage = `## Travel-worthy events to plan
+  let userMessage = `## Travel-worthy events to plan
 ${JSON.stringify(events, null, 2)}
 
 ## Other calendar events during travel periods (for conflict detection)
-${JSON.stringify(conflictCandidates, null, 2)}
+${JSON.stringify(conflictCandidates, null, 2)}`;
 
-Generate the complete itinerary for each travel-worthy event.`;
+  if (hasOnflyData) {
+    userMessage += `\n\n## REAL Onfly search results (use these to pick recommendations)
+${JSON.stringify(onflyData, null, 2)}`;
+  }
+
+  userMessage += `\n\nGenerate the complete itinerary for each travel-worthy event.`;
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
@@ -166,7 +213,13 @@ Generate the complete itinerary for each travel-worthy event.`;
     throw new Error("No text response from Claude");
   }
 
-  return JSON.parse(textBlock.text) as ItineraryResponse;
+  // Strip markdown code blocks if Claude wraps the JSON
+  let raw = textBlock.text.trim();
+  if (raw.startsWith("```")) {
+    raw = raw.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+  }
+
+  return JSON.parse(raw) as ItineraryResponse;
 }
 
 export async function filterTravelEvents(

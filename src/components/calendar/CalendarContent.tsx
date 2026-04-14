@@ -68,7 +68,7 @@ export function CalendarContent({ hasGoogleCalendar }: CalendarContentProps) {
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span className="text-sm text-muted-foreground">Conexão ativa · Eventos dos próximos 30 dias</span>
+                  <span className="text-sm text-muted-foreground">Conexão ativa · Eventos dos próximos 60 dias</span>
                 </div>
                 <Button onClick={handleSync} disabled={syncing} variant="outline" className="w-full">
                   <RefreshCw className={cn("w-4 h-4 mr-2", syncing && "animate-spin")} />
@@ -118,7 +118,7 @@ export function CalendarContent({ hasGoogleCalendar }: CalendarContentProps) {
           <h3 className="font-semibold mb-4">Como funciona a sincronização</h3>
           <div className="grid gap-4 sm:grid-cols-3">
             {[
-              { icon: Calendar, title: "Leitura de eventos", desc: "Escaneamos os próximos 30 dias da sua agenda" },
+              { icon: Calendar, title: "Leitura de eventos", desc: "Escaneamos os próximos 60 dias da sua agenda" },
               { icon: Zap, title: "Detecção por IA", desc: "Claude identifica quais eventos exigem viagem" },
               { icon: Clock, title: "Bloqueio de agenda", desc: "Eventos de deslocamento são criados automaticamente" },
             ].map((item, i) => (

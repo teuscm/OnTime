@@ -123,8 +123,8 @@
   --radius-xl: 1.5rem;
 
   /* Fonts */
-  --font-sans: var(--font-geist-sans), "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-geist-mono), "JetBrains Mono", monospace;
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif, "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace, "JetBrains Mono", monospace;
 
   /* Animations */
   --animate-fade-in: fade-in 0.6s ease-out forwards;

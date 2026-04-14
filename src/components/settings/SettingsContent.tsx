@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Plane,
   Bus,
@@ -38,6 +39,8 @@ export function SettingsContent({ initialPrefs }: SettingsContentProps) {
     hotelShareRoom: initialPrefs?.hotel_share_room === 1,
     hotelBreakfastRequired: initialPrefs?.hotel_breakfast_required !== 0,
     hotelType: (initialPrefs?.hotel_type as string) || "",
+    hotelMaxDailyPrice: (initialPrefs?.hotel_max_daily_price as number) ?? 50000,
+    hotelMaxDistance: (initialPrefs?.hotel_max_distance as number) ?? 2000,
     prefersRentalCar: initialPrefs?.prefers_rental_car === 1,
     mobilityPreference: (initialPrefs?.mobility_preference as string) || "rideshare",
     bleisureEnabled: initialPrefs?.bleisure_enabled === 1,
@@ -193,6 +196,30 @@ export function SettingsContent({ initialPrefs }: SettingsContentProps) {
                 {opt.label}
               </button>
             ))}
+          </div>
+
+          <div className="mt-4">
+            <label className="text-sm text-muted-foreground mb-2 block">Diária máxima</label>
+            <Slider
+              value={prefs.hotelMaxDailyPrice as number}
+              min={5000}
+              max={200000}
+              step={5000}
+              onChange={(v) => update("hotelMaxDailyPrice", v)}
+              formatLabel={(v) => `R$ ${(v / 100).toFixed(0)}`}
+            />
+          </div>
+
+          <div className="mt-4">
+            <label className="text-sm text-muted-foreground mb-2 block">Distância máxima do evento</label>
+            <Slider
+              value={prefs.hotelMaxDistance as number}
+              min={500}
+              max={10000}
+              step={500}
+              onChange={(v) => update("hotelMaxDistance", v)}
+              formatLabel={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)} km` : `${v}m`}
+            />
           </div>
         </CardContent>
       </Card>
