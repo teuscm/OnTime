@@ -100,7 +100,7 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
   const [itinerary, setItinerary] = useState<ItineraryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [bookedTrips, setBookedTrips] = useState<Set<number>>(new Set());
+  const [bookedTrips, setBookedTrips] = useState<Map<number, string[]>>(new Map());
   const [expandedTrips, setExpandedTrips] = useState<Set<number>>(new Set());
   const [enrichedTrips, setEnrichedTrips] = useState<EnrichedTripItinerary[] | null>(null);
   const [searchSteps, setSearchSteps] = useState<SearchStep[]>([]);
@@ -116,7 +116,7 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
   };
 
   // Navigation guard — prevent leaving during search or with draft itinerary
-  const shouldGuard = isWorking || (step === "itinerary" && !bookedTrips.size);
+  const shouldGuard = isWorking || (step === "itinerary" && bookedTrips.size === 0);
 
   useEffect(() => {
     if (!shouldGuard) return;
@@ -284,78 +284,73 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
     }
   };
 
-  // PHASE 2: User picks a scenario → call Claude
-  const selectScenario = async (scenarioIndex: number) => {
-    setIsWorking(true);
-    setError(null);
-    setStep("searching");
-    setSearchSteps([{ label: "Analisando com IA", status: "loading" }]);
-
-    const selected = travelEvents.filter((e) => selectedEventIds.has(e.id));
+  // PHASE 2: User picks a scenario → build itinerary INSTANTLY (no Claude)
+  const selectScenario = (scenarioIndex: number) => {
     const chosenScenario = flightResults[scenarioIndex];
     if (!chosenScenario || !searchedEvent) return;
 
-    try {
-      const onflyDataForClaude = [{
-        eventId: searchedEvent.id,
-        eventTitle: searchedEvent.title,
-        flightScenarios: [{ // Only the chosen scenario
-          label: chosenScenario.label,
-          dates: `${chosenScenario.dep} → ${chosenScenario.ret}`,
-          cheapestPrice: chosenScenario.cheapestTotal,
-          outbound: [...chosenScenario.outbound].sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0)).slice(0, 5).map((f) => ({ id: f.id, cia: f.airline.code, route: `${f.from}→${f.to}`, dep: f.departure.slice(11, 16), dur: f.duration, stops: f.stops, price: f.totalPrice, rec: f.recommended || undefined })),
-          inbound: [...chosenScenario.inbound].sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0)).slice(0, 5).map((f) => ({ id: f.id, cia: f.airline.code, route: `${f.from}→${f.to}`, dep: f.departure.slice(11, 16), dur: f.duration, stops: f.stops, price: f.totalPrice, rec: f.recommended || undefined })),
-        }],
-        hotels: (hotelResult?.recommended ?? []).sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0)).slice(0, 10).map((h) => ({ id: h.id, name: h.name, stars: h.stars, price: h.pricePerNight, cafe: h.breakfast || undefined, rec: h.recommended || undefined })),
-      }];
-
-      const res = await fetch("/api/itinerary/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ travelEvents: selected, allEvents: events, onflyData: onflyDataForClaude }),
+    const ensureSingleRec = (opts: FlightOption[]): FlightOption[] => {
+      let found = false;
+      return opts.map((f) => {
+        if (f.recommended && !found) { found = true; return f; }
+        return { ...f, recommended: false };
       });
-      if (!res.ok) throw new Error("Erro ao gerar itinerário");
-      const data = await res.json();
-      setItinerary(data.data);
+    };
 
-      // Build enriched trip
-      // Ensure exactly 1 recommended per direction
-      const ensureSingleRec = (opts: FlightOption[]): FlightOption[] => {
-        let found = false;
-        return opts.map((f) => {
-          if (f.recommended && !found) { found = true; return f; }
-          return { ...f, recommended: false };
-        });
-      };
+    const recOut = chosenScenario.outbound.find((f) => f.recommended) ?? chosenScenario.outbound[0];
+    const recRet = chosenScenario.inbound.find((f) => f.recommended) ?? chosenScenario.inbound[0];
+    const recHotel = hotelResult?.recommended?.find((h) => h.recommended) ?? hotelResult?.recommended?.[0];
 
-      const fallbackAirport = { id: "", code: "", name: "", placeId: "", city: { name: "", stateCode: "", countryCode: "BR", placeId: "" } };
-      setEnrichedTrips([{
-        ...(data.data.trips?.[0] ?? {}),
-        flightOutbound: chosenScenario.outbound.length > 0 ? {
-          origin: chosenScenario.resolvedAirports?.origin ?? { ...fallbackAirport, code: homeAirport },
-          destination: chosenScenario.resolvedAirports?.destination ?? { ...fallbackAirport, code: destCode },
-          options: ensureSingleRec(chosenScenario.outbound),
-          quoteId: chosenScenario.quoteId,
-          checkoutLink: chosenScenario.checkoutLink,
-        } : null,
-        flightReturn: chosenScenario.inbound.length > 0 ? {
-          origin: chosenScenario.resolvedAirports?.destination ?? { ...fallbackAirport, code: destCode },
-          destination: chosenScenario.resolvedAirports?.origin ?? { ...fallbackAirport, code: homeAirport },
-          options: ensureSingleRec(chosenScenario.inbound),
-          quoteId: chosenScenario.quoteId,
-          checkoutLink: chosenScenario.checkoutLink,
-        } : null,
-        hotelResults: hotelResult ?? null,
-      } as EnrichedTripItinerary]);
+    // Build recommendation summary
+    const parts: string[] = [];
+    if (recOut) parts.push(`Voo ${recOut.airline.name} ${recOut.flightNumber} ${recOut.from}→${recOut.to} R$ ${recOut.totalPrice.toFixed(2).replace(".", ",")}`);
+    if (recHotel) parts.push(`Hotel ${recHotel.name} ${recHotel.stars}★ R$ ${recHotel.pricePerNight.toFixed(2).replace(".", ",")}/n${recHotel.breakfast ? " c/ café" : ""}`);
 
-      updateStep("Analisando com IA", { status: "done", detail: "Pronto" });
-      setStep("itinerary");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro desconhecido");
-      setStep("compare");
-    } finally {
-      setIsWorking(false);
-    }
+    // Build itinerary deterministically
+    const needsHotel = chosenScenario.label !== "Bate-volta";
+    const tripItinerary: TripItinerary = {
+      event: {
+        title: searchedEvent.title,
+        datetime: searchedEvent.start,
+        location: searchedEvent.location ?? "",
+        durationHours: Math.max(1, (new Date(searchedEvent.end).getTime() - new Date(searchedEvent.start).getTime()) / 3600000),
+      },
+      transport: recOut ? {
+        type: "flight",
+        outbound: { origin: recOut.from, destination: recOut.to, suggestedDate: chosenScenario.dep, suggestedTime: recOut.departure.slice(11, 16), reason: chosenScenario.label },
+        return: recRet ? { origin: recRet.from, destination: recRet.to, suggestedDate: chosenScenario.ret, suggestedTime: recRet.departure.slice(11, 16), reason: chosenScenario.label } : { origin: "", destination: "", suggestedDate: chosenScenario.ret, suggestedTime: "", reason: "" },
+      } : null,
+      hotel: needsHotel && recHotel ? { needed: true, checkIn: chosenScenario.dep, checkOut: chosenScenario.ret, preferences: recHotel.breakfast ? "Café da manhã incluído" : "" } : { needed: false },
+      recommendationReason: parts.join(" | "),
+      mobility: [],
+      conflicts: [],
+      bleisure: null,
+      calendarEventsToCreate: [],
+    };
+
+    setItinerary({ trips: [tripItinerary] });
+
+    const fallbackAirport = { id: "", code: "", name: "", placeId: "", city: { name: "", stateCode: "", countryCode: "BR", placeId: "" } };
+    setEnrichedTrips([{
+      ...tripItinerary,
+      flightOutbound: chosenScenario.outbound.length > 0 ? {
+        origin: chosenScenario.resolvedAirports?.origin ?? { ...fallbackAirport, code: homeAirport },
+        destination: chosenScenario.resolvedAirports?.destination ?? { ...fallbackAirport, code: destCode },
+        options: ensureSingleRec(chosenScenario.outbound),
+        quoteId: chosenScenario.quoteId,
+        checkoutLink: chosenScenario.checkoutLink,
+      } : null,
+      flightReturn: chosenScenario.inbound.length > 0 ? {
+        origin: chosenScenario.resolvedAirports?.destination ?? { ...fallbackAirport, code: destCode },
+        destination: chosenScenario.resolvedAirports?.origin ?? { ...fallbackAirport, code: homeAirport },
+        options: ensureSingleRec(chosenScenario.inbound),
+        quoteId: chosenScenario.quoteId,
+        checkoutLink: chosenScenario.checkoutLink,
+      } : null,
+      hotelResults: hotelResult ?? null,
+    } as EnrichedTripItinerary]);
+
+    setStep("itinerary");
   };
 
   const toggleEvent = (id: string) => {
@@ -453,7 +448,22 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
         body: JSON.stringify({ events }),
       });
       if (!res.ok) throw new Error("Erro ao criar eventos na agenda");
-      setBookedTrips((prev) => new Set(prev).add(tripIndex));
+      const created = await res.json();
+      // Extract Google Calendar event IDs for persistence
+      const calendarEventIds = (created.data ?? []).map((e: { id?: string }) => e.id).filter(Boolean);
+
+      // Save itinerary with calendar event IDs
+      await fetch("/api/itinerary/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: searchedEvent?.id ?? "",
+          itineraryJson: JSON.stringify(trip),
+          calendarEventIds,
+        }),
+      });
+
+      setBookedTrips((prev) => new Map(prev).set(tripIndex, calendarEventIds));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao travar agenda");
     }
@@ -876,6 +886,7 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
           <div className="space-y-4">
             {itinerary.trips.map((trip, i) => {
               const isBooked = bookedTrips.has(i);
+              const bookedEventIds = bookedTrips.get(i) ?? [];
               const bookingLink = getOnflyBookingLink(trip);
               const expanded = expandedTrips.has(i);
 
@@ -1085,9 +1096,31 @@ export function DashboardContent({ hasGoogleCalendar, userName, homeAirport, iti
                       {/* Actions */}
                       <div className="px-5 pb-5 flex items-center gap-3">
                         {isBooked ? (
-                          <Button size="sm" disabled className="opacity-80 bg-emerald-500/15 text-emerald-500 border-0 rounded-xl text-xs h-9 px-5">
-                            <Check className="w-3.5 h-3.5 mr-1.5" />Agenda travada
-                          </Button>
+                          <>
+                            <Button size="sm" disabled className="opacity-80 bg-emerald-500/15 text-emerald-500 border-0 rounded-xl text-xs h-9 px-5">
+                              <Check className="w-3.5 h-3.5 mr-1.5" />Agenda travada
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive-foreground hover:bg-destructive/10 rounded-xl text-xs h-9 px-4"
+                              onClick={async () => {
+                                if (!confirm("Excluir itinerário e remover eventos do calendário?")) return;
+                                try {
+                                  await fetch("/api/calendar/delete", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ eventIds: bookedEventIds }),
+                                  });
+                                  setBookedTrips((prev) => { const next = new Map(prev); next.delete(i); return next; });
+                                } catch {
+                                  setError("Erro ao excluir itinerário");
+                                }
+                              }}
+                            >
+                              Excluir
+                            </Button>
+                          </>
                         ) : (
                           <Button
                             size="sm"

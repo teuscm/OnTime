@@ -168,3 +168,15 @@ export async function createEvent(
 
   return res.json();
 }
+
+export async function deleteEvent(accessToken: string, eventId: string): Promise<void> {
+  const res = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events/${eventId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    throw new Error(`Google Calendar delete event failed: ${text}`);
+  }
+}

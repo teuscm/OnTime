@@ -80,6 +80,7 @@ async function migrate(): Promise<void> {
   const alterStatements = [
     "ALTER TABLE user_preferences ADD COLUMN hotel_max_daily_price INTEGER DEFAULT 500000",
     "ALTER TABLE user_preferences ADD COLUMN hotel_max_distance INTEGER DEFAULT 2000",
+    "ALTER TABLE itineraries ADD COLUMN calendar_event_ids TEXT DEFAULT '[]'",
   ];
   for (const sql of alterStatements) {
     try {
@@ -247,4 +248,31 @@ export async function updateItineraryStatus(id: number, status: string) {
     sql: `UPDATE itineraries SET status = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [status, id],
   });
+}
+
+export async function saveItineraryWithCalendarEvents(
+  onflyUserId: string,
+  eventId: string,
+  itineraryJson: string,
+  calendarEventIds: string[]
+) {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `INSERT INTO itineraries (onfly_user_id, event_id, itinerary_json, status, calendar_event_ids) VALUES (?, ?, ?, 'confirmed', ?)`,
+    args: [onflyUserId, eventId, itineraryJson, JSON.stringify(calendarEventIds)],
+  });
+  return Number(result.lastInsertRowid);
+}
+
+export async function getItineraryCalendarEvents(id: number): Promise<string[]> {
+  const db = await getDb();
+  const result = await db.execute({ sql: "SELECT calendar_event_ids FROM itineraries WHERE id = ?", args: [id] });
+  const row = result.rows[0];
+  if (!row) return [];
+  try { return JSON.parse(row.calendar_event_ids as string); } catch { return []; }
+}
+
+export async function deleteItinerary(id: number) {
+  const db = await getDb();
+  await db.execute({ sql: "DELETE FROM itineraries WHERE id = ?", args: [id] });
 }
